@@ -22,6 +22,12 @@ func check(
     }
 }
 
+/// Small lock-free holder for values written from a progress callback.
+final class ValueBox<Value>: @unchecked Sendable {
+    var value: Value
+    init(_ value: Value) { self.value = value }
+}
+
 func item(_ name: String, directory: Bool = false, size: Int64 = 0) -> FileItem {
     FileItem(
         url: URL(fileURLWithPath: "/tmp/\(name)"),
@@ -156,6 +162,118 @@ do {
 } catch {
     failures += 1
     print("FAIL transfers: \(error)")
+}
+
+// MARK: - Transfer plan, progress, cancellation
+
+do {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let sourceDir = root.appendingPathComponent("src", isDirectory: true)
+    let targetDir = root.appendingPathComponent("dst", isDirectory: true)
+    try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: targetDir, withIntermediateDirectories: true)
+
+    let nested = sourceDir.appendingPathComponent("folder/sub", isDirectory: true)
+    try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+    try Data("deep".utf8).write(to: nested.appendingPathComponent("deep.txt"))
+    let top = sourceDir.appendingPathComponent("top.txt")
+    try Data("top".utf8).write(to: top)
+
+    // Planning: conflicts, per-item policies, sizes.
+    try Data("old".utf8).write(to: targetDir.appendingPathComponent("top.txt"))
+    let planner = TransferPlanner()
+    let plan = planner.plan(
+        sources: [top, sourceDir.appendingPathComponent("folder")],
+        to: targetDir,
+        kind: .copy,
+        policy: .replace
+    )
+    check(plan.conflicts == [top], "planner reports existing destination names")
+    check(plan.itemCount == 2, "planner keeps non-conflicting items")
+    check(plan.totalBytes == Int64(3 + 4), "planner sums file sizes")
+
+    let skipPlan = planner.plan(sources: [top], to: targetDir, kind: .copy, policy: .skip)
+    check(skipPlan.itemCount == 0 && skipPlan.skipped == [top], "planner drops skipped items")
+
+    let keepPlan = planner.plan(sources: [top], to: targetDir, kind: .copy, policy: .keepBoth)
+    check(keepPlan.entries.first?.target.lastPathComponent == "top copy.txt", "planner renames keepBoth copies")
+
+    let mixedPlan = planner.plan(
+        sources: [top],
+        to: targetDir,
+        kind: .copy,
+        policy: .skip,
+        policies: [top: .replace]
+    )
+    check(mixedPlan.itemCount == 1, "per-item policy overrides the batch policy")
+
+    // Copy tree with metadata.
+    try FileManager.default.setAttributes([.posixPermissions: 0o640], ofItemAtPath: top.path)
+    let copyPlan = planner.plan(
+        sources: [sourceDir.appendingPathComponent("folder"), top],
+        to: targetDir,
+        kind: .copy,
+        policy: .replace
+    )
+    let lastFraction = ValueBox<Double>(0)
+    let copyOutcome = TransferExecutor().execute(
+        copyPlan,
+        kind: .copy,
+        progress: { value in lastFraction.value = value.fraction }
+    )
+    let copiedDeep = targetDir.appendingPathComponent("folder/sub/deep.txt")
+    check(FileManager.default.fileExists(atPath: copiedDeep.path), "executor copies a directory tree")
+    check(
+        (try? String(contentsOf: copiedDeep, encoding: .utf8)) == "deep",
+        "executor writes nested contents"
+    )
+    let copiedTop = targetDir.appendingPathComponent("top.txt")
+    check((try? String(contentsOf: copiedTop, encoding: .utf8)) == "top", "executor replaces the target")
+    let permissions = (try? FileManager.default.attributesOfItem(atPath: copiedTop.path)[.posixPermissions]) as? Int
+    check(permissions == 0o640, "executor copies POSIX permissions")
+    check(copyOutcome.transferred.count == 2, "executor reports transferred items")
+    check(lastFraction.value == 1, "progress ends at 100%")
+
+    let leftovers = try FileManager.default.contentsOfDirectory(atPath: targetDir.path)
+        .filter { $0.contains(".openlift-") }
+    check(leftovers.isEmpty, "executor leaves no staging files behind")
+
+    // Move across a volume boundary (forced copy-and-delete path).
+    let moveSource = sourceDir.appendingPathComponent("top.txt")
+    let movePlan = planner.plan(sources: [moveSource], to: targetDir, kind: .move, policy: .replace)
+    let moveOutcome = TransferExecutor(moveStrategy: .copyAndDelete).execute(movePlan, kind: .move)
+    check(moveOutcome.transferred.count == 1, "copy-and-delete move completes")
+    check(!FileManager.default.fileExists(atPath: moveSource.path), "copy-and-delete move removes the source")
+    check((try? String(contentsOf: targetDir.appendingPathComponent("top.txt"), encoding: .utf8)) == "top",
+          "copy-and-delete move writes the target")
+
+    // Cancellation inside a large file: nothing partial is left behind.
+    let bigDir = root.appendingPathComponent("big", isDirectory: true)
+    try FileManager.default.createDirectory(at: bigDir, withIntermediateDirectories: true)
+    let big = bigDir.appendingPathComponent("big.bin")
+    try Data(count: 16 << 20).write(to: big)
+    let bigTargetDir = root.appendingPathComponent("bigdst", isDirectory: true)
+    try FileManager.default.createDirectory(at: bigTargetDir, withIntermediateDirectories: true)
+
+    let token = CancellationToken()
+    let bigPlan = planner.plan(sources: [big], to: bigTargetDir, kind: .copy, policy: .replace)
+    let cancelledOutcome = TransferExecutor().execute(
+        bigPlan,
+        kind: .copy,
+        isCancelled: { token.isCancelled },
+        progress: { value in
+            if value.bytesCompleted > 0 { token.cancel() }
+        }
+    )
+    check(cancelledOutcome.cancelled, "cancellation is reported")
+    check(cancelledOutcome.transferred.isEmpty, "cancelled transfer reports nothing transferred")
+    let bigLeftovers = try FileManager.default.contentsOfDirectory(atPath: bigTargetDir.path)
+    check(bigLeftovers.isEmpty, "cancelled transfer leaves no partial file")
+    check(FileManager.default.fileExists(atPath: big.path), "cancelled copy keeps the source")
+} catch {
+    failures += 1
+    print("FAIL transfer engine: \(error)")
 }
 
 // MARK: - Per-folder view settings

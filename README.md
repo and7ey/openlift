@@ -25,7 +25,8 @@ Early development. The local-file MVP is in progress:
 | Tabs per pane, mounted volumes, grouping, per-folder settings | done |
 | Drag & drop, copy/move between panes | done |
 | Clipboard (cut/copy/paste, Finder interop) | done |
-| Operation queue, conflict resolution, undo | conflicts (basic) done; queue/undo pending (M2) |
+| Transfers: progress, cancel, conflicts with “apply to all” | done |
+| Undo / redo, activity window | pending (M2) |
 | Quick Look, Get Info, search, icon view | planned (M3) |
 | Remote providers (SFTP, FTP, WebDAV, S3, cloud) | planned (post-MVP) |
 
@@ -74,6 +75,7 @@ Sources/
   OpenLiftCore/       platform-independent model, providers, persistence
     Browser/          BrowserModel — listing, history, sorting, grouping, FSEvents
     Model/            FileItem, SortDescriptor, ViewSettings, Favorite
+    Operations/       TransferPlanner, TransferExecutor, progress, cancellation
     Provider/         FileProvider protocol, LocalFileProvider, DirectoryWatcher
     Persistence/      FavoritesStore, WindowStateStore, ViewSettingsStore
   OpenLiftUI/         AppKit views
@@ -95,6 +97,10 @@ Design notes:
 - `BrowserModel` is the single source of truth for a pane; views observe it.
 - Commands flow through one command surface (`MainWindowController` selectors)
   shared by menu, toolbar and keyboard.
+- Transfers are planned before they start (targets, conflicts, total bytes),
+  then written under a hidden staging name and renamed into place, so a
+  cancelled or failed operation never leaves a partial file; metadata is
+  copied with `copyfile(3)`.
 - Persistence is plain `Codable` JSON under
   `~/Library/Application Support/OpenLift/`.
 
@@ -120,6 +126,7 @@ See [`docs/spec/mvp.md`](docs/spec/mvp.md) for the full MVP specification and
 | Enclosing Folder | ⌘↑ |
 | Home | ⇧⌘H |
 | Refresh | ⌘R |
+| Cancel a running transfer | Esc |
 | Show Hidden Files | ⇧⌘. |
 | Show Sidebar | ⌃⌘S |
 | Single Pane | ⌘\ |

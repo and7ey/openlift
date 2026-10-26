@@ -28,14 +28,14 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned
 
 - [x] Copy / move between panes (menu) and drag & drop into a pane
 - [x] Basic conflict resolution (`replace`, `skip`, `keepBoth`)
-- [ ] `FileOperation` + `OperationQueue` with progress events
+- [x] Transfer engine: plan, progress events, per-item policies
 - [x] Clipboard: copy, cut, paste (file URLs on the pasteboard, cut moves on paste)
-- [ ] Conflict dialog with "apply to all"
+- [x] Conflict dialog with "apply to all" (asked per item, with a checkbox)
 - [ ] Undo / redo (trash restore, move back, rename back)
 - [ ] Activity window with progress and logs
-- [ ] Cancellation without partial files
-- [ ] Cross-volume move via temporary name
-- [ ] `copyfile(3)` with flags for metadata fidelity
+- [x] Cancellation without partial files (staging name + atomic rename)
+- [x] Cross-volume move via temporary name (rename, else copy + delete)
+- [x] `copyfile(3)` for metadata fidelity (permissions, times, ACLs, xattrs)
 
 ## M3 — Comfort ⬜
 

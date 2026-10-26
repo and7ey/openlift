@@ -18,15 +18,23 @@ public struct TransferOutcome: Sendable {
     public var transferred: [URL] = []
     public var skipped: [URL] = []
     public var failures: [(url: URL, reason: String)] = []
+    /// True when the user cancelled: items already finished stay, nothing
+    /// partial is left behind.
+    public var cancelled = false
+    public var copiedBytes: Int64 = 0
+    public var totalBytes: Int64 = 0
 
     public init() {}
+
+    public var isEmpty: Bool {
+        transferred.isEmpty && skipped.isEmpty && failures.isEmpty
+    }
 }
 
 /// Performs copy and move batches with a single conflict policy.
 ///
-/// This is the seed of the M2 operation queue: it is already `Sendable` and
-/// runs off the main actor, so the UI can call it from a `Task` without
-/// blocking. Progress reporting and cancellation land with the queue.
+/// Planning and execution live in `TransferPlanner` and `TransferExecutor`;
+/// this type is the convenient async wrapper the UI calls.
 public struct FileTransfer: Sendable {
     public init() {}
 
@@ -34,46 +42,31 @@ public struct FileTransfer: Sendable {
         _ sources: [URL],
         to destination: URL,
         kind: TransferKind,
-        policy: TransferConflictPolicy
+        policy: TransferConflictPolicy,
+        policies: [URL: TransferConflictPolicy] = [:],
+        isCancelled: @escaping @Sendable () -> Bool = { false },
+        progress: @escaping @Sendable (TransferProgress) -> Void = { _ in }
     ) async -> TransferOutcome {
-        var outcome = TransferOutcome()
-        let manager = FileManager.default
-
-        for source in sources {
-            let target = destination.appendingPathComponent(source.lastPathComponent)
-
-            do {
-                if manager.fileExists(atPath: target.path) {
-                    switch policy {
-                    case .skip:
-                        outcome.skipped.append(source)
-                        continue
-                    case .replace:
-                        try manager.removeItem(at: target)
-                    case .keepBoth:
-                        let unique = Self.uniqueDestination(for: target)
-                        try perform(kind: kind, from: source, to: unique)
-                        outcome.transferred.append(unique)
-                        continue
-                    }
-                }
-                try perform(kind: kind, from: source, to: target)
-                outcome.transferred.append(target)
-            } catch {
-                outcome.failures.append((source, error.localizedDescription))
-            }
-        }
-
-        return outcome
+        let plan = plan(sources, to: destination, kind: kind, policy: policy, policies: policies)
+        return await Task.detached(priority: .userInitiated) {
+            TransferExecutor().execute(plan, kind: kind, isCancelled: isCancelled, progress: progress)
+        }.value
     }
 
-    private func perform(kind: TransferKind, from source: URL, to target: URL) throws {
-        switch kind {
-        case .copy:
-            try FileManager.default.copyItem(at: source, to: target)
-        case .move:
-            try FileManager.default.moveItem(at: source, to: target)
-        }
+    public func plan(
+        _ sources: [URL],
+        to destination: URL,
+        kind: TransferKind,
+        policy: TransferConflictPolicy,
+        policies: [URL: TransferConflictPolicy] = [:]
+    ) -> TransferPlan {
+        TransferPlanner().plan(
+            sources: sources,
+            to: destination,
+            kind: kind,
+            policy: policy,
+            policies: policies
+        )
     }
 
     /// Returns a non-existing `name copy`, `name copy 2`, … URL next to `url`.
