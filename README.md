@@ -1,0 +1,128 @@
+# OpenLift
+
+An open-source, native macOS dual-pane file manager and file-transfer client,
+built from scratch in Swift and AppKit.
+
+OpenLift is an independent implementation. It is inspired by the workflow of
+commercial dual-pane managers (ForkLift in particular), but contains no code,
+assets, icons, localizations or other material from them. See
+[Legal](#legal).
+
+## Status
+
+Early development. The local-file MVP is in progress:
+
+| Area | State |
+|---|---|
+| App scaffold, SPM build, `.app` bundling | done |
+| Two panes, sidebar, path bar, status bar, toolbar | done |
+| List view, sortable columns, folders-first | done |
+| Navigation (double-click, back/forward/up/home, path bar, sidebar) | done |
+| Show hidden files | done |
+| New folder, rename, duplicate, trash, reveal, open in Terminal | done |
+| Live refresh via FSEvents | done |
+| Window/favorites persistence | done |
+| Tabs, drag & drop, copy/move between panes | drag & drop + copy/move done; tabs pending |
+| Operation queue, conflict resolution, undo | conflicts (basic) done; queue/undo pending (M2) |
+| Quick Look, Get Info, search, icon view | planned (M3) |
+| Remote providers (SFTP, FTP, WebDAV, S3, cloud) | planned (post-MVP) |
+
+## Requirements
+
+- macOS 14 or newer
+- Swift 6.3 toolchain
+
+A full Xcode installation is **not** required: the app builds with the Command
+Line Tools and `swift build`. XCTest-based tests do require Xcode; until then,
+use the dependency-free self-test runner.
+
+## Build and run
+
+```sh
+# Build + assemble build/OpenLift.app (ad-hoc signed)
+./Scripts/make-app.sh debug
+open build/OpenLift.app
+
+# Or run the binary directly
+swift run OpenLift
+```
+
+Release build:
+
+```sh
+./Scripts/make-app.sh release
+```
+
+## Tests
+
+```sh
+swift run OpenLiftSelfTest
+```
+
+The runner covers ordering/grouping, favorites persistence and the local
+provider (listing, hidden files, move, create, delete). When Xcode is
+available, `Tests/OpenLiftTests/OpenLiftTests.swift` can be re-enabled as a
+`swift-testing` target in `Package.swift`.
+
+## Architecture
+
+```
+Sources/
+  OpenLiftCore/       platform-independent model, providers, persistence
+    Browser/          BrowserModel — listing, history, sorting, FSEvents
+    Model/            FileItem, SortDescriptor, ViewSettings, Favorite
+    Provider/         FileProvider protocol, LocalFileProvider, DirectoryWatcher
+    Persistence/      FavoritesStore, WindowStateStore
+  OpenLiftUI/         AppKit views
+    Browser/          BrowserPaneViewController (path bar, table, status bar)
+    Sidebar/          SidebarViewController (favorites tree)
+  OpenLiftApp/        application shell
+    MainWindowController  window, split view, command routing, toolbar
+    MenuBuilder           menu bar
+    AppDelegate           lifecycle
+  OpenLift/           executable entry point
+```
+
+Design notes:
+
+- `FileProvider` exists from day one, even though only `LocalFileProvider` is
+  shipped, so remote sources will not force a rewrite of the browser.
+- `BrowserModel` is the single source of truth for a pane; views observe it.
+- Commands flow through one command surface (`MainWindowController` selectors)
+  shared by menu, toolbar and keyboard.
+- Persistence is plain `Codable` JSON under
+  `~/Library/Application Support/OpenLift/`.
+
+See [`docs/spec/mvp.md`](docs/spec/mvp.md) for the full MVP specification and
+[`docs/roadmap.md`](docs/roadmap.md) for milestones.
+
+## Keyboard shortcuts
+
+| Action | Shortcut |
+|---|---|
+| New Folder | ⇧⌘N |
+| Rename | ↩ |
+| Duplicate | ⌘D |
+| Open | ⌘O |
+| Move to Trash | ⌘⌫ |
+| Reveal in Finder | ⇧⌘R |
+| Open in Terminal | ⌃⌘T |
+| Back / Forward | ⌘[ / ⌘] |
+| Enclosing Folder | ⌘↑ |
+| Home | ⇧⌘H |
+| Refresh | ⌘R |
+| Show Hidden Files | ⇧⌘. |
+| Show Sidebar | ⌃⌘S |
+| Single Pane | ⌘\ |
+| Swap Panes | ⇧⌘S |
+
+## Legal
+
+OpenLift is an independent, clean-room implementation. It contains no
+decompiled code, resources, icons, localizations or branding from any
+commercial product. Reverse-engineering research, when performed, is used only
+to understand observable behaviour and to inform an original design.
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).
