@@ -288,6 +288,20 @@ public final class MainWindowController: NSWindowController {
         activePane.transferSelection(to: otherPane.model.directory, kind: .move)
     }
 
+    // MARK: - Clipboard
+
+    @objc public func cut(_ sender: Any?) {
+        activePane.cut(sender)
+    }
+
+    @objc public func copy(_ sender: Any?) {
+        activePane.copy(sender)
+    }
+
+    @objc public func paste(_ sender: Any?) {
+        activePane.paste(sender)
+    }
+
     @objc public func revealInFinder(_ sender: Any?) {
         activePane.performRevealInFinder()
     }
@@ -341,6 +355,21 @@ public final class MainWindowController: NSWindowController {
 
     @objc public func showActivities(_ sender: Any?) {
         // M2: activity window.
+    }
+}
+
+// MARK: - Menu validation
+
+extension MainWindowController: NSMenuItemValidation {
+    public func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        switch menuItem.action {
+        case #selector(cut(_:)), #selector(copy(_:)):
+            return !activePane.selectedItems.isEmpty
+        case #selector(paste(_:)):
+            return !FileClipboard.shared.urls.isEmpty
+        default:
+            return true
+        }
     }
 }
 

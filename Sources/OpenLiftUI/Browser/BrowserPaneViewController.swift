@@ -156,6 +156,10 @@ public final class BrowserPaneViewController: NSViewController {
         menu.addItem(withTitle: "Open", action: #selector(openSelection), keyEquivalent: "")
         menu.addItem(withTitle: "Open in Other Pane", action: #selector(openInOtherPane), keyEquivalent: "")
         menu.addItem(.separator())
+        menu.addItem(withTitle: "Cut", action: #selector(cut(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Copy", action: #selector(copy(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Paste", action: #selector(paste(_:)), keyEquivalent: "")
+        menu.addItem(.separator())
         menu.addItem(withTitle: "New Folder", action: #selector(newFolderAction), keyEquivalent: "")
         menu.addItem(withTitle: "Rename…", action: #selector(renameAction), keyEquivalent: "")
         menu.addItem(withTitle: "Duplicate", action: #selector(duplicateAction), keyEquivalent: "")
@@ -441,7 +445,12 @@ public final class BrowserPaneViewController: NSViewController {
     }
 
     /// Copies or moves explicit URLs into `destination` (drag & drop, menu).
-    public func transfer(sources: [URL], to destination: URL, kind: TransferKind) {
+    public func transfer(
+        sources: [URL],
+        to destination: URL,
+        kind: TransferKind,
+        onFinish: ((TransferOutcome) -> Void)? = nil
+    ) {
         guard let policy = resolveConflictPolicy(for: sources, in: destination) else { return }
 
         Task {
@@ -458,6 +467,40 @@ public final class BrowserPaneViewController: NSViewController {
                 )
             }
             model.reload()
+            onFinish?(outcome)
+        }
+    }
+
+    // MARK: - Clipboard
+
+    @objc public func copy(_ sender: Any?) {
+        let urls = selectedItems.map(\.url)
+        guard !urls.isEmpty else { return }
+        FileClipboard.shared.write(urls, mode: .copy)
+    }
+
+    @objc public func cut(_ sender: Any?) {
+        let urls = selectedItems.map(\.url)
+        guard !urls.isEmpty else { return }
+        FileClipboard.shared.write(urls, mode: .cut)
+    }
+
+    @objc public func paste(_ sender: Any?) {
+        let clipboard = FileClipboard.shared
+        let destination = model.directory
+        let kind: TransferKind = clipboard.isCut ? .move : .copy
+
+        let urls = clipboard.urls
+        // Cutting into the folder the items already live in is a no-op.
+        let sources = kind == .move
+            ? urls.filter { $0.deletingLastPathComponent().standardizedFileURL != destination.standardizedFileURL }
+            : urls
+        guard !sources.isEmpty else { return }
+
+        transfer(sources: sources, to: destination, kind: kind) { outcome in
+            if kind == .move, !outcome.transferred.isEmpty {
+                clipboard.consumeCut()
+            }
         }
     }
 

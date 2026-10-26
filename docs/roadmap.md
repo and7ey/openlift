@@ -29,7 +29,7 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned
 - [x] Copy / move between panes (menu) and drag & drop into a pane
 - [x] Basic conflict resolution (`replace`, `skip`, `keepBoth`)
 - [ ] `FileOperation` + `OperationQueue` with progress events
-- [ ] Clipboard: copy, cut, paste
+- [x] Clipboard: copy, cut, paste (file URLs on the pasteboard, cut moves on paste)
 - [ ] Conflict dialog with "apply to all"
 - [ ] Undo / redo (trash restore, move back, rename back)
 - [ ] Activity window with progress and logs

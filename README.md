@@ -24,6 +24,7 @@ Early development. The local-file MVP is in progress:
 | Window/favorites persistence | done |
 | Tabs per pane, mounted volumes, grouping, per-folder settings | done |
 | Drag & drop, copy/move between panes | done |
+| Clipboard (cut/copy/paste, Finder interop) | done |
 | Operation queue, conflict resolution, undo | conflicts (basic) done; queue/undo pending (M2) |
 | Quick Look, Get Info, search, icon view | planned (M3) |
 | Remote providers (SFTP, FTP, WebDAV, S3, cloud) | planned (post-MVP) |
@@ -78,6 +79,7 @@ Sources/
   OpenLiftUI/         AppKit views
     Browser/          BrowserTabsViewController, BrowserPaneViewController,
                       PaneTabBarView (path bar, table, status bar)
+    Clipboard/        FileClipboard — file URLs + cut marker on NSPasteboard
     Sidebar/          SidebarViewController (favorites + mounted volumes)
   OpenLiftApp/        application shell
     MainWindowController  window, split view, command routing, toolbar
@@ -106,6 +108,7 @@ See [`docs/spec/mvp.md`](docs/spec/mvp.md) for the full MVP specification and
 | New Tab | ⌘T |
 | Close Tab | ⌘W |
 | Next / Previous Tab | ⌃⇥ / ⌃⇧⇥ |
+| Cut / Copy / Paste | ⌘X / ⌘C / ⌘V |
 | New Folder | ⇧⌘N |
 | Rename | ↩ |
 | Duplicate | ⌘D |

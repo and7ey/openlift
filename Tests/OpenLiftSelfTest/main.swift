@@ -238,6 +238,20 @@ do {
     watcher.stop()
 }
 
+// FSEvents is recursive; a listing only cared about its own level.
+do {
+    let watched = "/Users/example"
+    check(DirectoryWatcher.isRelevantChange(watched, for: watched), "a change to the watched folder itself is relevant")
+    check(
+        DirectoryWatcher.isRelevantChange("/Users/example/file.txt", for: watched),
+        "a change to a direct child is relevant"
+    )
+    check(
+        !DirectoryWatcher.isRelevantChange("/Users/example/Library/Caches/x", for: watched),
+        "a change deeper in the tree is ignored"
+    )
+}
+
 // MARK: - Summary
 
 print("")

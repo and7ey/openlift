@@ -13,7 +13,7 @@ public enum MenuBuilder {
 
         mainMenu.addItem(applicationMenuItem())
         mainMenu.addItem(fileMenuItem(target: target))
-        mainMenu.addItem(editMenuItem())
+        mainMenu.addItem(editMenuItem(target: target))
         mainMenu.addItem(viewMenuItem(target: target))
         mainMenu.addItem(goMenuItem(target: target))
         mainMenu.addItem(windowMenuItem(target: target))
@@ -74,16 +74,20 @@ public enum MenuBuilder {
         return item
     }
 
-    private static func editMenuItem() -> NSMenuItem {
+    private static func editMenuItem(target: AnyObject) -> NSMenuItem {
         let item = NSMenuItem()
         let menu = NSMenu(title: "Edit")
         menu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
         let redo = menu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
         redo.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        menu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        menu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+
+        // File operations are targeted at the window controller so they always
+        // act on the active pane, whichever view holds focus. Text editing only
+        // happens inside modal sheets, where the menu bar is disabled.
+        menu.addItem(makeItem("Cut", #selector(MainWindowController.cut(_:)), "x", [.command], target))
+        menu.addItem(makeItem("Copy", #selector(MainWindowController.copy(_:)), "c", [.command], target))
+        menu.addItem(makeItem("Paste", #selector(MainWindowController.paste(_:)), "v", [.command], target))
         menu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         item.submenu = menu
         return item
