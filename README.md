@@ -32,7 +32,7 @@ Early development. The local-file MVP is in progress:
 | Search in folder, ZIP archives | done |
 | Icon view | done |
 | Settings window | done |
-| Keyboard shortcut customization | planned (M3) |
+| Keyboard shortcut customization | done |
 | Remote providers (SFTP, FTP, WebDAV, S3, cloud) | planned (post-MVP) |
 
 ## Requirements
@@ -112,6 +112,9 @@ Design notes:
 - Settings apply view options to every open folder (hidden files, folders
   first), keep the recent-operations limit (undo + activity) in `UserDefaults`,
   clear the activity log, and can reset every folder's view settings.
+- Shortcuts are overrides on top of `ShortcutCommand` defaults: the recorder
+  refuses conflicts with any menu item, cleared shortcuts stay cleared, and
+  the menu is re-keyed immediately and at launch.
 - The icon view is the same pane model in an `NSCollectionView`: selection,
   search, grouping, drag & drop, Quick Look and every command work the same,
   and list/icon mode is remembered per folder.

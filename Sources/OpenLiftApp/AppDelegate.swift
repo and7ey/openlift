@@ -15,6 +15,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         mainWindowController = controller
 
         NSApp.mainMenu = MenuBuilder.build(target: controller)
+        controller.applyShortcuts()
 
         controller.showWindow(nil)
         controller.window?.makeKeyAndOrderFront(nil)

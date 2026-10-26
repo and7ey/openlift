@@ -12,6 +12,7 @@ public final class SettingsWindowController: NSWindowController {
     public var onFoldersFirstChanged: ((Bool) -> Void)?
     public var onLimitsChanged: ((Int) -> Void)?
     public var onResetFolderViews: (() -> Void)?
+    public var onEditShortcuts: (() -> Void)?
 
     private let showHiddenButton = NSButton(
         checkboxWithTitle: "Show hidden files in all open folders",
@@ -68,6 +69,14 @@ public final class SettingsWindowController: NSWindowController {
         foldersFirstButton.target = self
         foldersFirstButton.action = #selector(foldersFirstChanged(_:))
 
+        let shortcutsButton = NSButton(
+            title: "Keyboard Shortcuts…",
+            target: self,
+            action: #selector(editShortcuts(_:))
+        )
+        shortcutsButton.bezelStyle = .inline
+        shortcutsButton.controlSize = .small
+
         let resetButton = NSButton(
             title: "Reset All Folder Views…",
             target: self,
@@ -77,7 +86,12 @@ public final class SettingsWindowController: NSWindowController {
         resetButton.controlSize = .small
 
         let generalHeader = header("General")
-        let generalStack = NSStackView(views: [showHiddenButton, foldersFirstButton, resetButton])
+        let generalStack = NSStackView(views: [
+            showHiddenButton,
+            foldersFirstButton,
+            shortcutsButton,
+            resetButton
+        ])
         generalStack.orientation = .vertical
         generalStack.alignment = .leading
         generalStack.spacing = 8
@@ -186,6 +200,10 @@ public final class SettingsWindowController: NSWindowController {
 
     @objc private func clearActivity(_ sender: Any?) {
         ActivityLog.shared.clear()
+    }
+
+    @objc private func editShortcuts(_ sender: Any?) {
+        onEditShortcuts?()
     }
 
     @objc private func resetFolderViews(_ sender: Any?) {

@@ -19,6 +19,8 @@ public final class MainWindowController: NSWindowController {
     private var activityWindowController: ActivityWindowController?
     private var infoWindowController: InfoWindowController?
     private var settingsWindowController: SettingsWindowController?
+    private var shortcutsWindowController: ShortcutsWindowController?
+    private let shortcuts = ShortcutStore()
 
     private var isSinglePane = false
     private var activePaneIndex = 0
@@ -206,6 +208,84 @@ public final class MainWindowController: NSWindowController {
         updateWindowTitle()
     }
 
+    // MARK: - Shortcuts
+
+    /// Selector behind each customizable command.
+    private static let shortcutSelectors: [ShortcutCommand: Selector] = [
+        .newFolder: #selector(newFolder(_:)),
+        .rename: #selector(renameSelection(_:)),
+        .duplicate: #selector(duplicateSelection(_:)),
+        .moveToTrash: #selector(moveToTrash(_:)),
+        .quickLook: #selector(quickLook(_:)),
+        .getInfo: #selector(showInfo(_:)),
+        .findInFolder: #selector(find(_:)),
+        .refresh: #selector(refresh(_:)),
+        .toggleHidden: #selector(toggleHiddenFiles(_:)),
+        .copyToOtherPane: #selector(copyToOtherPane(_:)),
+        .moveToOtherPane: #selector(moveToOtherPane(_:)),
+        .activity: #selector(showActivity(_:)),
+        .singlePane: #selector(toggleSinglePane(_:)),
+        .swapPanes: #selector(swapPanes(_:))
+    ]
+
+    @objc func showShortcuts(_ sender: Any?) {
+        if shortcutsWindowController == nil {
+            let controller = ShortcutsWindowController(store: shortcuts)
+            controller.onChange = { [weak self] in self?.applyShortcuts() }
+            controller.conflictTitles = { [weak self] shortcut, command in
+                self?.shortcutConflicts(for: shortcut, excluding: command) ?? []
+            }
+            shortcutsWindowController = controller
+        }
+        shortcutsWindowController?.present()
+    }
+
+    /// Pushes the stored shortcuts (defaults or overrides) onto the menu items.
+    public func applyShortcuts() {
+        guard let menu = NSApp.mainMenu else { return }
+        applyShortcuts(to: menu)
+    }
+
+    private func applyShortcuts(to menu: NSMenu) {
+        for item in menu.items {
+            if let action = item.action,
+               let command = Self.shortcutSelectors.first(where: { $0.value == action })?.key {
+                let shortcut = shortcuts.shortcut(for: command)
+                item.keyEquivalent = shortcut?.key ?? ""
+                item.keyEquivalentModifierMask = shortcut?.modifiers.eventFlags ?? []
+            }
+            if let submenu = item.submenu {
+                applyShortcuts(to: submenu)
+            }
+        }
+    }
+
+    /// Menu items (including non-customizable ones) that already use this
+    /// shortcut, so the recorder can refuse duplicates such as ⌘O.
+    private func shortcutConflicts(
+        for shortcut: KeyboardShortcut,
+        excluding command: ShortcutCommand
+    ) -> [String] {
+        guard let menu = NSApp.mainMenu else { return [] }
+        let editedSelector = Self.shortcutSelectors[command]
+        var titles: [String] = []
+
+        func visit(_ menu: NSMenu) {
+            for item in menu.items {
+                if item.action != editedSelector,
+                   item.keyEquivalent == shortcut.key,
+                   ShortcutModifiers(flags: item.keyEquivalentModifierMask) == shortcut.modifiers {
+                    titles.append(item.title)
+                }
+                if let submenu = item.submenu {
+                    visit(submenu)
+                }
+            }
+        }
+        visit(menu)
+        return titles
+    }
+
     // MARK: - Settings
 
     @objc func showSettings(_ sender: Any?) {
@@ -228,6 +308,9 @@ public final class MainWindowController: NSWindowController {
             }
             controller.onResetFolderViews = { [weak self] in
                 self?.confirmResetFolderViews()
+            }
+            controller.onEditShortcuts = { [weak self] in
+                self?.showShortcuts(nil)
             }
             settingsWindowController = controller
         }

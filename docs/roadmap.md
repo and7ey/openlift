@@ -37,7 +37,7 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned
 - [x] Cross-volume move via temporary name (rename, else copy + delete)
 - [x] `copyfile(3)` for metadata fidelity (permissions, times, ACLs, xattrs)
 
-## M3 — Comfort ⬜
+## M3 — Comfort ✅
 
 - [x] Quick Look panel and preview (Space, ⌘Y)
 - [x] Get Info / inspector (⌘I, multi-selection)
@@ -46,7 +46,7 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned
 - [x] Create ZIP archive (single item or selection)
 - [x] Icon view (`NSCollectionView`)
 - [x] Settings window (General, Activity, About)
-- [ ] Keyboard shortcut customization
+- [x] Keyboard shortcut customization (recorder, conflict check, defaults)
 
 ## M4 — Stabilization ⬜
 

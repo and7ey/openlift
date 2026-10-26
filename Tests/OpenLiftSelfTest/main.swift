@@ -464,6 +464,57 @@ do {
     check(newest == "Two", "trimming keeps the newest entries")
 }
 
+// MARK: - Keyboard shortcuts
+
+do {
+    let suite = "OpenLiftSelfTest.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite) ?? .standard
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let store = ShortcutStore(defaults: defaults, storageKey: "shortcuts")
+
+    check(
+        store.shortcut(for: .newFolder) == KeyboardShortcut(key: "n", modifiers: [.command, .shift]),
+        "new folder has its default shortcut"
+    )
+    check(
+        store.shortcut(for: .rename) == KeyboardShortcut(key: "\r", modifiers: []),
+        "rename has its default Return shortcut"
+    )
+
+    let custom = KeyboardShortcut(key: "k", modifiers: [.command, .option])
+    store.set(custom, for: .newFolder)
+    check(store.shortcut(for: .newFolder) == custom, "a custom shortcut replaces the default")
+    check(store.isCustomized(.newFolder), "customized commands are marked")
+    check(
+        store.conflictingCommand(for: KeyboardShortcut(key: "r", modifiers: [.command]), excluding: .newFolder) == .refresh,
+        "shortcut conflicts are detected"
+    )
+    check(
+        store.conflictingCommand(for: custom, excluding: .newFolder) == nil,
+        "a unique shortcut has no conflict"
+    )
+
+    store.set(nil, for: .refresh)
+    check(store.shortcut(for: .refresh) == nil, "a shortcut can be removed")
+    let reloaded = ShortcutStore(defaults: defaults, storageKey: "shortcuts")
+    check(reloaded.shortcut(for: .refresh) == nil, "a removed shortcut stays removed")
+    check(reloaded.shortcut(for: .newFolder) == custom, "custom shortcuts persist")
+
+    reloaded.resetAll()
+    check(
+        reloaded.shortcut(for: .refresh) == KeyboardShortcut(key: "r", modifiers: [.command]),
+        "reset restores defaults"
+    )
+    check(!reloaded.isCustomized(.newFolder), "reset forgets overrides")
+
+    let defaultsList = ShortcutCommand.allCases.compactMap(\.defaultShortcut)
+    check(Set(defaultsList).count == defaultsList.count, "default shortcuts are unique")
+    check(
+        Set(ShortcutCommand.allCases.map(\.title)).count == ShortcutCommand.allCases.count,
+        "shortcut command titles are unique"
+    )
+}
+
 // MARK: - Per-folder view settings
 
 do {
