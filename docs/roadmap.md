@@ -45,7 +45,7 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned
 - [x] Search in current folder (live name filter, ⌘F)
 - [x] Create ZIP archive (single item or selection)
 - [x] Icon view (`NSCollectionView`)
-- [ ] Settings window
+- [x] Settings window (General, Activity, About)
 - [ ] Keyboard shortcut customization
 
 ## M4 — Stabilization ⬜

@@ -18,6 +18,7 @@ public final class MainWindowController: NSWindowController {
     private let history = OperationHistory()
     private var activityWindowController: ActivityWindowController?
     private var infoWindowController: InfoWindowController?
+    private var settingsWindowController: SettingsWindowController?
 
     private var isSinglePane = false
     private var activePaneIndex = 0
@@ -32,6 +33,7 @@ public final class MainWindowController: NSWindowController {
 
     private var activePane: BrowserPaneViewController { activeTabs.activePane }
     private var otherPane: BrowserPaneViewController { otherTabs.activePane }
+    private var allPanes: [BrowserPaneViewController] { leftTabs.panes + rightTabs.panes }
 
     public init(stateStore: WindowStateStore = WindowStateStore()) {
         self.stateStore = stateStore
@@ -149,6 +151,14 @@ public final class MainWindowController: NSWindowController {
             self?.presentOperationError(error)
         }
 
+        let appSettings = AppSettingsStore.shared
+        history.limit = appSettings.settings.undoLimit
+        ActivityLog.shared.limit = appSettings.settings.activityLimit
+        appSettings.onChange = { [weak self] settings in
+            self?.history.limit = settings.undoLimit
+            ActivityLog.shared.limit = settings.activityLimit
+        }
+
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleOpenInOtherPane(_:)),
@@ -194,6 +204,54 @@ public final class MainWindowController: NSWindowController {
         leftTabs.activePane.isActivePane = index == 0
         rightTabs.activePane.isActivePane = index == 1
         updateWindowTitle()
+    }
+
+    // MARK: - Settings
+
+    @objc func showSettings(_ sender: Any?) {
+        if settingsWindowController == nil {
+            let controller = SettingsWindowController()
+            controller.onShowHiddenChanged = { [weak self] value in
+                self?.allPanes.forEach { $0.model.settings.showHidden = value }
+            }
+            controller.onFoldersFirstChanged = { [weak self] value in
+                self?.allPanes.forEach { pane in
+                    var sort = pane.model.settings.sort
+                    sort.foldersFirst = value
+                    pane.model.settings.sort = sort
+                }
+            }
+            controller.onLimitsChanged = { value in
+                AppSettingsStore.shared.update(
+                    AppSettings(undoLimit: value, activityLimit: value)
+                )
+            }
+            controller.onResetFolderViews = { [weak self] in
+                self?.confirmResetFolderViews()
+            }
+            settingsWindowController = controller
+        }
+
+        let appSettings = AppSettingsStore.shared.settings
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1"
+        settingsWindowController?.present(
+            showHidden: activePane.model.settings.showHidden,
+            foldersFirst: activePane.model.settings.sort.foldersFirst,
+            limit: min(appSettings.undoLimit, appSettings.activityLimit),
+            version: version
+        )
+    }
+
+    private func confirmResetFolderViews() {
+        let alert = NSAlert()
+        alert.messageText = "Reset all folder views?"
+        alert.informativeText = "Every folder will forget its sort order, grouping, hidden-file and list/icon setting."
+        alert.addButton(withTitle: "Reset")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        viewSettingsStore.removeAll()
+        allPanes.forEach { $0.model.settings = .default }
     }
 
     // MARK: - Search

@@ -11,7 +11,7 @@ public enum MenuBuilder {
     public static func build(target: AnyObject) -> NSMenu {
         let mainMenu = NSMenu()
 
-        mainMenu.addItem(applicationMenuItem())
+        mainMenu.addItem(applicationMenuItem(target: target))
         mainMenu.addItem(fileMenuItem(target: target))
         mainMenu.addItem(editMenuItem(target: target))
         mainMenu.addItem(viewMenuItem(target: target))
@@ -24,11 +24,13 @@ public enum MenuBuilder {
 
     // MARK: - Menus
 
-    private static func applicationMenuItem() -> NSMenuItem {
+    private static func applicationMenuItem(target: AnyObject) -> NSMenuItem {
         let item = NSMenuItem()
         let menu = NSMenu(title: "OpenLift")
 
         menu.addItem(withTitle: "About OpenLift", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        menu.addItem(.separator())
+        menu.addItem(makeItem("Settings…", #selector(MainWindowController.showSettings(_:)), ",", [.command], target))
         menu.addItem(.separator())
 
         let servicesItem = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")

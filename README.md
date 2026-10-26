@@ -31,7 +31,8 @@ Early development. The local-file MVP is in progress:
 | Quick Look, Get Info, Open With | done |
 | Search in folder, ZIP archives | done |
 | Icon view | done |
-| Settings window, shortcut customization | planned (M3) |
+| Settings window | done |
+| Keyboard shortcut customization | planned (M3) |
 | Remote providers (SFTP, FTP, WebDAV, S3, cloud) | planned (post-MVP) |
 
 ## Requirements
@@ -108,6 +109,9 @@ Design notes:
   then written under a hidden staging name and renamed into place, so a
   cancelled or failed operation never leaves a partial file; metadata is
   copied with `copyfile(3)`.
+- Settings apply view options to every open folder (hidden files, folders
+  first), keep the recent-operations limit (undo + activity) in `UserDefaults`,
+  clear the activity log, and can reset every folder's view settings.
 - The icon view is the same pane model in an `NSCollectionView`: selection,
   search, grouping, drag & drop, Quick Look and every command work the same,
   and list/icon mode is remembered per folder.
@@ -153,6 +157,7 @@ See [`docs/spec/mvp.md`](docs/spec/mvp.md) for the full MVP specification and
 | Quick Look | Space or ⌘Y |
 | Get Info | ⌘I |
 | Find in folder | ⌘F |
+| Settings | ⌘, |
 | Show Hidden Files | ⇧⌘. |
 | Show Sidebar | ⌃⌘S |
 | Single Pane | ⌘\ |

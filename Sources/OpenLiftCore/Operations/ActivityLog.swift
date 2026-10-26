@@ -72,8 +72,15 @@ public final class ActivityLog {
     /// Called after each change with enough detail for a targeted row update.
     public var onChange: ((ActivityChange) -> Void)?
 
-    /// How many finished entries are kept.
-    public var limit = 200
+    /// How many finished entries are kept. Shrinking the limit trims the log
+    /// immediately.
+    public var limit = 200 {
+        didSet {
+            guard entries.count > limit else { return }
+            entries.removeLast(entries.count - limit)
+            notify(.cleared)
+        }
+    }
 
     public init() {}
 

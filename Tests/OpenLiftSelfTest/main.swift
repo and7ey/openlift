@@ -435,6 +435,35 @@ do {
     check(isEmpty, "activity log can be cleared")
 }
 
+// MARK: - App settings and activity limits
+
+do {
+    let suite = "OpenLiftSelfTest.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite) ?? .standard
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    let store = await MainActor.run { AppSettingsStore(defaults: defaults, storageKey: "settings") }
+    let initial = await MainActor.run { store.settings }
+    check(initial.undoLimit == 50 && initial.activityLimit == 200, "app settings start with defaults")
+
+    await MainActor.run {
+        store.update(AppSettings(undoLimit: 25, activityLimit: 80))
+    }
+    let reloaded = await MainActor.run { AppSettingsStore(defaults: defaults, storageKey: "settings") }
+    let persisted = await MainActor.run { reloaded.settings }
+    check(persisted.undoLimit == 25, "undo limit persists")
+    check(persisted.activityLimit == 80, "activity limit persists")
+
+    let log = await MainActor.run { ActivityLog() }
+    await MainActor.run { log.limit = 1 }
+    _ = await MainActor.run { log.begin(title: "One", detail: "") }
+    _ = await MainActor.run { log.begin(title: "Two", detail: "") }
+    let count = await MainActor.run { log.entries.count }
+    check(count == 1, "lowering the activity limit trims old entries")
+    let newest = await MainActor.run { log.entries.first?.title }
+    check(newest == "Two", "trimming keeps the newest entries")
+}
+
 // MARK: - Per-folder view settings
 
 do {
