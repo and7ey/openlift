@@ -146,6 +146,7 @@ public enum MenuBuilder {
     private static func windowMenuItem(target: AnyObject) -> NSMenuItem {
         let item = NSMenuItem()
         let menu = NSMenu(title: "Window")
+        menu.addItem(makeItem("Activity", #selector(MainWindowController.showActivity(_:)), "a", [.command, .option], target))
         menu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         menu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
         menu.addItem(.separator())

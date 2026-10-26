@@ -24,7 +24,7 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned
 - [x] Grouping (kind/name)
 - [x] Remember per-folder view settings
 
-## M2 — Operations 🚧
+## M2 — Operations ✅
 
 - [x] Copy / move between panes (menu) and drag & drop into a pane
 - [x] Basic conflict resolution (`replace`, `skip`, `keepBoth`)
@@ -32,7 +32,7 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned
 - [x] Clipboard: copy, cut, paste (file URLs on the pasteboard, cut moves on paste)
 - [x] Conflict dialog with "apply to all" (asked per item, with a checkbox)
 - [x] Undo / redo (trash restore, move back, rename back, new folder)
-- [ ] Activity window with progress and logs
+- [x] Activity window with progress and logs
 - [x] Cancellation without partial files (staging name + atomic rename)
 - [x] Cross-volume move via temporary name (rename, else copy + delete)
 - [x] `copyfile(3)` for metadata fidelity (permissions, times, ACLs, xattrs)

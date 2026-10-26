@@ -16,6 +16,7 @@ public final class MainWindowController: NSWindowController {
     private let stateStore: WindowStateStore
     private let viewSettingsStore: ViewSettingsStore
     private let history = OperationHistory()
+    private var activityWindowController: ActivityWindowController?
 
     private var isSinglePane = false
     private var activePaneIndex = 0
@@ -186,6 +187,15 @@ public final class MainWindowController: NSWindowController {
         leftTabs.activePane.isActivePane = index == 0
         rightTabs.activePane.isActivePane = index == 1
         updateWindowTitle()
+    }
+
+    // MARK: - Activity
+
+    @objc func showActivity(_ sender: Any?) {
+        if activityWindowController == nil {
+            activityWindowController = ActivityWindowController()
+        }
+        activityWindowController?.present()
     }
 
     // MARK: - Undo

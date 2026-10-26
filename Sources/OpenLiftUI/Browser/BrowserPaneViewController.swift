@@ -386,6 +386,7 @@ public final class BrowserPaneViewController: NSViewController {
         guard !name.isEmpty else { return }
         let destination = model.directory.appendingPathComponent(name, isDirectory: true)
         let provider = LocalFileProvider()
+        let activityID = ActivityLog.shared.begin(title: "New Folder", detail: destination.path)
         Task {
             do {
                 try await provider.createDirectory(at: destination)
@@ -395,8 +396,10 @@ public final class BrowserPaneViewController: NSViewController {
                         pairs: [.init(source: destination, target: destination)]
                     )
                 )
+                ActivityLog.shared.finish(activityID, status: .completed)
                 model.reload()
             } catch {
+                ActivityLog.shared.finish(activityID, status: .failed, message: error.localizedDescription)
                 present(error: error)
             }
         }
@@ -416,12 +419,16 @@ public final class BrowserPaneViewController: NSViewController {
         guard !newName.isEmpty, newName != item.name else { return }
         let destination = item.url.deletingLastPathComponent().appendingPathComponent(newName)
         let provider = LocalFileProvider()
+        let record = FileOperationRecord(kind: .rename, pairs: [.init(source: item.url, target: destination)])
+        let activityID = ActivityLog.shared.begin(title: record.title, detail: "to “\(newName)”")
         Task {
             do {
                 try await provider.move(item.url, to: destination)
-                onOperation?(FileOperationRecord(kind: .rename, pairs: [.init(source: item.url, target: destination)]))
+                onOperation?(record)
+                ActivityLog.shared.finish(activityID, status: .completed)
                 model.reload()
             } catch {
+                ActivityLog.shared.finish(activityID, status: .failed, message: error.localizedDescription)
                 present(error: error)
             }
         }
@@ -430,20 +437,38 @@ public final class BrowserPaneViewController: NSViewController {
     @objc func duplicateAction() {
         let provider = LocalFileProvider()
         let items = selectedItems
+        guard !items.isEmpty else { return }
+
+        let planned = items.map { ($0.url, Self.uniqueDestination(for: $0.url)) }
+        let record = FileOperationRecord(
+            kind: .copy,
+            pairs: planned.map { .init(source: $0.0, target: $0.1) }
+        )
+        let activityID = ActivityLog.shared.begin(
+            title: record.title,
+            detail: "\(planned.count) item\(planned.count == 1 ? "" : "s") in place"
+        )
+
         Task {
-            var pairs: [FileOperationRecord.Pair] = []
-            for item in items {
-                let destination = Self.uniqueDestination(for: item.url)
+            var copied: [FileOperationRecord.Pair] = []
+            var failures: [String] = []
+            for (source, destination) in planned {
                 do {
-                    try await provider.copy(item.url, to: destination)
-                    pairs.append(.init(source: item.url, target: destination))
+                    try await provider.copy(source, to: destination)
+                    copied.append(.init(source: source, target: destination))
                 } catch {
+                    failures.append("\(source.lastPathComponent): \(error.localizedDescription)")
                     present(error: error)
                 }
             }
-            if !pairs.isEmpty {
-                onOperation?(FileOperationRecord(kind: .copy, pairs: pairs))
+            if !copied.isEmpty {
+                onOperation?(FileOperationRecord(kind: .copy, pairs: copied))
             }
+            ActivityLog.shared.finish(
+                activityID,
+                status: failures.isEmpty ? .completed : .failed,
+                message: failures.first
+            )
             model.reload()
         }
     }
@@ -452,19 +477,36 @@ public final class BrowserPaneViewController: NSViewController {
         let provider = LocalFileProvider()
         let items = selectedItems
         guard !items.isEmpty else { return }
+
+        let title = FileOperationRecord(
+            kind: .trash,
+            pairs: items.map { .init(source: $0.url, target: $0.url) }
+        ).title
+        let detail = items.count == 1
+            ? items[0].url.deletingLastPathComponent().path
+            : "\(items.count) items"
+        let activityID = ActivityLog.shared.begin(title: title, detail: detail)
+
         Task {
             var pairs: [FileOperationRecord.Pair] = []
+            var failures: [String] = []
             for item in items {
                 do {
                     let trashed = try await provider.trash(item.url)
                     pairs.append(.init(source: item.url, target: trashed))
                 } catch {
+                    failures.append("\(item.url.lastPathComponent): \(error.localizedDescription)")
                     present(error: error)
                 }
             }
             if !pairs.isEmpty {
                 onOperation?(FileOperationRecord(kind: .trash, pairs: pairs))
             }
+            ActivityLog.shared.finish(
+                activityID,
+                status: failures.isEmpty ? .completed : .failed,
+                message: failures.first
+            )
             model.reload()
         }
     }
@@ -538,6 +580,19 @@ public final class BrowserPaneViewController: NSViewController {
             policies[url] = policy
         }
 
+        let operationKind: FileOperationRecord.Kind = kind == .copy ? .copy : .move
+        let activityTitle = FileOperationRecord(
+            kind: operationKind,
+            pairs: pending.map {
+                .init(source: $0, target: destination.appendingPathComponent($0.lastPathComponent))
+            }
+        ).title
+        let destinationName = destination.lastPathComponent
+        let initialDetail = pending.count == 1
+            ? "to “\(destinationName)”"
+            : "\(pending.count) items to “\(destinationName)”"
+        let activityID = ActivityLog.shared.begin(title: activityTitle, detail: initialDetail)
+
         let token = CancellationToken()
         activeTransferToken = token
         beginOperation(verb: kind == .copy ? "Copying" : "Moving", token: token)
@@ -553,6 +608,10 @@ public final class BrowserPaneViewController: NSViewController {
                 progress: { value in
                     Task { @MainActor [weak self] in
                         self?.showOperationProgress(value, token: token)
+                        let current = value.currentName.isEmpty
+                            ? initialDetail
+                            : "“\(value.currentName)” → “\(destinationName)”"
+                        ActivityLog.shared.update(activityID, detail: current, fraction: value.fraction)
                     }
                 }
             )
@@ -567,8 +626,19 @@ public final class BrowserPaneViewController: NSViewController {
             }
             if !outcome.pairs.isEmpty {
                 let pairs = outcome.pairs.map { FileOperationRecord.Pair(source: $0.source, target: $0.target) }
-                onOperation?(FileOperationRecord(kind: kind == .copy ? .copy : .move, pairs: pairs))
+                onOperation?(FileOperationRecord(kind: operationKind, pairs: pairs))
             }
+
+            let status: ActivityStatus = outcome.cancelled
+                ? .cancelled
+                : (outcome.failures.isEmpty ? .completed : .failed)
+            let message = outcome.failures.first.map { "\($0.url.lastPathComponent): \($0.reason)" }
+            let finalDetail = outcome.cancelled
+                ? "Cancelled after \(outcome.pairs.count) of \(pending.count) items"
+                : "\(outcome.pairs.count) of \(pending.count) items to “\(destinationName)”"
+            ActivityLog.shared.update(activityID, detail: finalDetail)
+            ActivityLog.shared.finish(activityID, status: status, message: message)
+
             model.reload()
             onFinish?(outcome)
         }

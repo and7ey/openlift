@@ -342,6 +342,46 @@ do {
     print("FAIL undo records: \(error)")
 }
 
+// MARK: - Activity log
+
+do {
+    let log = await MainActor.run { ActivityLog() }
+    let first = await MainActor.run {
+        log.begin(title: "Copy “a.txt”", detail: "to “Desktop”")
+    }
+    await MainActor.run {
+        log.update(first, detail: "“a.txt” → “Desktop”", fraction: 0.42)
+    }
+    let running = await MainActor.run { log.entries.first }
+    check(running?.status == .running, "activity entry starts running")
+    check(running?.fraction == 0.42, "activity entry reports live progress")
+    check(running?.detail.hasPrefix("“a.txt”") == true, "activity update changes the detail")
+    let runningCount = await MainActor.run { log.runningCount }
+    check(runningCount == 1, "activity counts running entries")
+
+    await MainActor.run { log.finish(first, status: .completed) }
+    let finished = await MainActor.run { log.entries.first }
+    check(finished?.status == .completed, "activity entry can finish")
+    check(finished?.fraction == nil, "finished entries drop their progress")
+    check(finished?.finishedAt != nil, "finished entries keep a timestamp")
+
+    // Late progress for a finished entry must not resurrect it.
+    await MainActor.run { log.update(first, fraction: 0.9) }
+    let lateFraction = await MainActor.run { log.entries.first?.fraction }
+    check(lateFraction == nil, "finished entries ignore further progress")
+
+    // Newest first, and failures keep their message.
+    let second = await MainActor.run { log.begin(title: "Move “b.txt”", detail: "to “Desktop”") }
+    await MainActor.run { log.finish(second, status: .failed, message: "Permission denied") }
+    let top = await MainActor.run { log.entries.first }
+    check(top?.title == "Move “b.txt”", "newest activity entry comes first")
+    check(top?.message == "Permission denied", "failed entries keep the reason")
+
+    await MainActor.run { log.clear() }
+    let isEmpty = await MainActor.run { log.entries.isEmpty }
+    check(isEmpty, "activity log can be cleared")
+}
+
 // MARK: - Per-folder view settings
 
 do {

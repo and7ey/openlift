@@ -27,7 +27,7 @@ Early development. The local-file MVP is in progress:
 | Clipboard (cut/copy/paste, Finder interop) | done |
 | Transfers: progress, cancel, conflicts with “apply to all” | done |
 | Undo / redo (copy/move/rename/trash/new folder) | done |
-| Activity window | pending (M2) |
+| Activity window (live progress, session log) | done |
 | Quick Look, Get Info, search, icon view | planned (M3) |
 | Remote providers (SFTP, FTP, WebDAV, S3, cloud) | planned (post-MVP) |
 
@@ -83,6 +83,7 @@ Sources/
     Browser/          BrowserTabsViewController, BrowserPaneViewController,
                       PaneTabBarView (path bar, table, status bar)
     Clipboard/        FileClipboard — file URLs + cut marker on NSPasteboard
+    Activity/         ActivityWindowController — live progress + session log
     Sidebar/          SidebarViewController (favorites + mounted volumes)
   OpenLiftApp/        application shell
     MainWindowController  window, split view, command routing, toolbar
@@ -102,6 +103,9 @@ Design notes:
   then written under a hidden staging name and renamed into place, so a
   cancelled or failed operation never leaves a partial file; metadata is
   copied with `copyfile(3)`.
+- `ActivityLog` is an in-memory session log shared by the panes and the
+  Activity window (Window ▸ Activity). Running transfers update one entry in
+  place, so the log doubles as a progress view and as the operation history.
 - Undo/redo uses two stacks of `FileOperationRecord` rather than `UndoManager`,
   because reversing a transfer is asynchronous. Each record stores both URLs,
   so undo never guesses names; undoing a copy moves the copy to the Trash (an
@@ -133,6 +137,7 @@ See [`docs/spec/mvp.md`](docs/spec/mvp.md) for the full MVP specification and
 | Home | ⇧⌘H |
 | Refresh | ⌘R |
 | Cancel a running transfer | Esc |
+| Activity window | ⌥⌘A |
 | Show Hidden Files | ⇧⌘. |
 | Show Sidebar | ⌃⌘S |
 | Single Pane | ⌘\ |
