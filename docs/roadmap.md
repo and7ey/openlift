@@ -31,7 +31,7 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned
 - [x] Transfer engine: plan, progress events, per-item policies
 - [x] Clipboard: copy, cut, paste (file URLs on the pasteboard, cut moves on paste)
 - [x] Conflict dialog with "apply to all" (asked per item, with a checkbox)
-- [ ] Undo / redo (trash restore, move back, rename back)
+- [x] Undo / redo (trash restore, move back, rename back, new folder)
 - [ ] Activity window with progress and logs
 - [x] Cancellation without partial files (staging name + atomic rename)
 - [x] Cross-volume move via temporary name (rename, else copy + delete)

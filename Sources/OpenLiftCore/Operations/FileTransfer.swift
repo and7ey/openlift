@@ -16,6 +16,8 @@ public enum TransferConflictPolicy: Sendable {
 /// Result of a batch transfer.
 public struct TransferOutcome: Sendable {
     public var transferred: [URL] = []
+    /// Source/target pairs for the items that were written, used by undo.
+    public var pairs: [(source: URL, target: URL)] = []
     public var skipped: [URL] = []
     public var failures: [(url: URL, reason: String)] = []
     /// True when the user cancelled: items already finished stay, nothing

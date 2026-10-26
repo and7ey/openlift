@@ -15,6 +15,7 @@ public final class MainWindowController: NSWindowController {
     private let panesSplit: NSSplitViewController
     private let stateStore: WindowStateStore
     private let viewSettingsStore: ViewSettingsStore
+    private let history = OperationHistory()
 
     private var isSinglePane = false
     private var activePaneIndex = 0
@@ -134,6 +135,17 @@ public final class MainWindowController: NSWindowController {
     private func configurePanes() {
         leftTabs.onActivate = { [weak self] in self?.activatePane(0) }
         rightTabs.onActivate = { [weak self] in self?.activatePane(1) }
+        leftTabs.onOperation = { [weak self] record in self?.history.record(record) }
+        rightTabs.onOperation = { [weak self] record in self?.history.record(record) }
+
+        history.onChange = { [weak self] in
+            guard let self else { return }
+            self.leftTabs.panes.forEach { $0.model.reload() }
+            self.rightTabs.panes.forEach { $0.model.reload() }
+        }
+        history.onError = { [weak self] error in
+            self?.presentOperationError(error)
+        }
 
         NotificationCenter.default.addObserver(
             self,
@@ -174,6 +186,29 @@ public final class MainWindowController: NSWindowController {
         leftTabs.activePane.isActivePane = index == 0
         rightTabs.activePane.isActivePane = index == 1
         updateWindowTitle()
+    }
+
+    // MARK: - Undo
+
+    @objc func undo(_ sender: Any?) {
+        history.undo()
+    }
+
+    @objc func redo(_ sender: Any?) {
+        history.redo()
+    }
+
+    private func presentOperationError(_ error: Error) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "The operation could not be completed"
+        alert.informativeText = error.localizedDescription
+        alert.addButton(withTitle: "OK")
+        if let window {
+            alert.beginSheetModal(for: window)
+        } else {
+            alert.runModal()
+        }
     }
 
     private func updateWindowTitle() {
@@ -363,6 +398,12 @@ public final class MainWindowController: NSWindowController {
 extension MainWindowController: NSMenuItemValidation {
     public func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
+        case #selector(undo(_:)):
+            menuItem.title = history.undoTitle
+            return history.canUndo
+        case #selector(redo(_:)):
+            menuItem.title = history.redoTitle
+            return history.canRedo
         case #selector(cut(_:)), #selector(copy(_:)):
             return !activePane.selectedItems.isEmpty
         case #selector(paste(_:)):

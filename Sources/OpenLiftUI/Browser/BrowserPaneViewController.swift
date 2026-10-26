@@ -15,9 +15,11 @@ public final class BrowserPaneViewController: NSViewController {
     public var onActivate: (() -> Void)?
     /// Called when the user opens a directory or file from this pane.
     public var onOpenDirectory: ((URL) -> Void)?
+    /// Called with a reversible record after a mutating operation succeeds.
+    public var onOperation: ((FileOperationRecord) -> Void)?
 
     private let pathControl = NSPathControl()
-    private let tableView = NSTableView()
+    private let tableView = ActivatingTableView()
     private let scrollView = NSScrollView()
     private let statusLabel = NSTextField(labelWithString: "")
     private let progressIndicator = NSProgressIndicator()
@@ -127,6 +129,7 @@ public final class BrowserPaneViewController: NSViewController {
         tableView.rowHeight = 22
         tableView.dataSource = self
         tableView.delegate = self
+        tableView.onActivate = { [weak self] in self?.activate() }
         tableView.target = self
         tableView.doubleAction = #selector(tableDoubleClicked(_:))
         tableView.menu = makeContextMenu()
@@ -386,6 +389,12 @@ public final class BrowserPaneViewController: NSViewController {
         Task {
             do {
                 try await provider.createDirectory(at: destination)
+                onOperation?(
+                    FileOperationRecord(
+                        kind: .createDirectory,
+                        pairs: [.init(source: destination, target: destination)]
+                    )
+                )
                 model.reload()
             } catch {
                 present(error: error)
@@ -410,6 +419,7 @@ public final class BrowserPaneViewController: NSViewController {
         Task {
             do {
                 try await provider.move(item.url, to: destination)
+                onOperation?(FileOperationRecord(kind: .rename, pairs: [.init(source: item.url, target: destination)]))
                 model.reload()
             } catch {
                 present(error: error)
@@ -421,13 +431,18 @@ public final class BrowserPaneViewController: NSViewController {
         let provider = LocalFileProvider()
         let items = selectedItems
         Task {
+            var pairs: [FileOperationRecord.Pair] = []
             for item in items {
                 let destination = Self.uniqueDestination(for: item.url)
                 do {
                     try await provider.copy(item.url, to: destination)
+                    pairs.append(.init(source: item.url, target: destination))
                 } catch {
                     present(error: error)
                 }
+            }
+            if !pairs.isEmpty {
+                onOperation?(FileOperationRecord(kind: .copy, pairs: pairs))
             }
             model.reload()
         }
@@ -438,12 +453,17 @@ public final class BrowserPaneViewController: NSViewController {
         let items = selectedItems
         guard !items.isEmpty else { return }
         Task {
+            var pairs: [FileOperationRecord.Pair] = []
             for item in items {
                 do {
-                    try await provider.trash(item.url)
+                    let trashed = try await provider.trash(item.url)
+                    pairs.append(.init(source: item.url, target: trashed))
                 } catch {
                     present(error: error)
                 }
+            }
+            if !pairs.isEmpty {
+                onOperation?(FileOperationRecord(kind: .trash, pairs: pairs))
             }
             model.reload()
         }
@@ -544,6 +564,10 @@ public final class BrowserPaneViewController: NSViewController {
                         : "\(outcome.failures.count) items could not be transferred",
                     message: "\(failure.url.lastPathComponent): \(failure.reason)"
                 )
+            }
+            if !outcome.pairs.isEmpty {
+                let pairs = outcome.pairs.map { FileOperationRecord.Pair(source: $0.source, target: $0.target) }
+                onOperation?(FileOperationRecord(kind: kind == .copy ? .copy : .move, pairs: pairs))
             }
             model.reload()
             onFinish?(outcome)
@@ -684,6 +708,18 @@ public final class BrowserPaneViewController: NSViewController {
         } else {
             alert.runModal()
         }
+    }
+}
+
+/// A table that makes its pane active on every click, including clicks on an
+/// already selected row. Without this, clicking a row in a pane that is not
+/// active leaves commands (copy, trash, paste) pointed at the other pane.
+private final class ActivatingTableView: NSTableView {
+    var onActivate: (() -> Void)?
+
+    override func mouseDown(with event: NSEvent) {
+        onActivate?()
+        super.mouseDown(with: event)
     }
 }
 

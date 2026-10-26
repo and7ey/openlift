@@ -26,7 +26,8 @@ Early development. The local-file MVP is in progress:
 | Drag & drop, copy/move between panes | done |
 | Clipboard (cut/copy/paste, Finder interop) | done |
 | Transfers: progress, cancel, conflicts with “apply to all” | done |
-| Undo / redo, activity window | pending (M2) |
+| Undo / redo (copy/move/rename/trash/new folder) | done |
+| Activity window | pending (M2) |
 | Quick Look, Get Info, search, icon view | planned (M3) |
 | Remote providers (SFTP, FTP, WebDAV, S3, cloud) | planned (post-MVP) |
 
@@ -101,6 +102,11 @@ Design notes:
   then written under a hidden staging name and renamed into place, so a
   cancelled or failed operation never leaves a partial file; metadata is
   copied with `copyfile(3)`.
+- Undo/redo uses two stacks of `FileOperationRecord` rather than `UndoManager`,
+  because reversing a transfer is asynchronous. Each record stores both URLs,
+  so undo never guesses names; undoing a copy moves the copy to the Trash (an
+  item it replaced is not restored), undoing a move/rename moves it back, and
+  undoing a new folder trashes it.
 - Persistence is plain `Codable` JSON under
   `~/Library/Application Support/OpenLift/`.
 

@@ -128,9 +128,7 @@ public struct LocalFileProvider: FileProvider {
         let isDirectory = values.isDirectory ?? false
         let isPackage = values.isPackage ?? false
         let size = values.fileSize.map(Int64.init)
-        let permissions = (try? FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? NSNumber)
-            .flatMap { $0?.intValue }
-            .map { String($0, radix: 8) }
+        let permissions = Self.permissions(of: url)
 
         return FileItem(
             url: url,
@@ -147,6 +145,19 @@ public struct LocalFileProvider: FileProvider {
             permissions: permissions,
             owner: nil
         )
+    }
+
+    /// Permission bits from `stat(2)`.
+    ///
+    /// Deliberately not `FileManager.attributesOfItem`: that enumerates every
+    /// extended attribute with `getxattr`, which can block for seconds on
+    /// dataless files (iCloud Drive, cloud-synced folders) and made a listing
+    /// appear to hang. `stat` answers instantly and is what the mode column
+    /// needs.
+    private static func permissions(of url: URL) -> String? {
+        var info = stat()
+        guard url.path.withCString({ stat($0, &info) }) == 0 else { return nil }
+        return String(info.st_mode & 0o777, radix: 8)
     }
 
     private static func map(_ error: NSError, url: URL) -> FileProviderError {

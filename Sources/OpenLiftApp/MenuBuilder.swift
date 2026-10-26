@@ -77,9 +77,9 @@ public enum MenuBuilder {
     private static func editMenuItem(target: AnyObject) -> NSMenuItem {
         let item = NSMenuItem()
         let menu = NSMenu(title: "Edit")
-        menu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
-        let redo = menu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
-        redo.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(makeItem("Undo", #selector(MainWindowController.undo(_:)), "z", [.command], target))
+        let redo = makeItem("Redo", #selector(MainWindowController.redo(_:)), "z", [.command, .shift], target)
+        menu.addItem(redo)
         menu.addItem(.separator())
 
         // File operations are targeted at the window controller so they always

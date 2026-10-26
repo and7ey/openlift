@@ -9,6 +9,8 @@ import OpenLiftCore
 @MainActor
 public final class BrowserTabsViewController: NSViewController {
     public var onActivate: (() -> Void)?
+    /// Forwarded from every pane in this tab container.
+    public var onOperation: ((FileOperationRecord) -> Void)?
 
     private let provider: FileProvider
     private let settingsStore: ViewSettingsStore?
@@ -37,6 +39,7 @@ public final class BrowserTabsViewController: NSViewController {
             )
             let pane = BrowserPaneViewController(model: model)
             pane.onActivate = { [weak self] in self?.onActivate?() }
+            pane.onOperation = { [weak self] record in self?.onOperation?(record) }
             return pane
         }
         activeIndex = min(max(activeTab, 0), panes.count - 1)
@@ -112,6 +115,7 @@ public final class BrowserTabsViewController: NSViewController {
         )
         let pane = BrowserPaneViewController(model: model)
         pane.onActivate = { [weak self] in self?.onActivate?() }
+        pane.onOperation = { [weak self] record in self?.onOperation?(record) }
 
         panes.append(pane)
         activeIndex = panes.count - 1

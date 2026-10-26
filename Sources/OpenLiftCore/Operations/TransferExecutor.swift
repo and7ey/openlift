@@ -46,6 +46,7 @@ public struct TransferExecutor: Sendable {
             do {
                 try perform(entry, kind: kind, session: session)
                 session.outcome.transferred.append(entry.target)
+                session.outcome.pairs.append((entry.source, entry.target))
             } catch TransferError.cancelled {
                 session.outcome.cancelled = true
                 break

@@ -276,6 +276,72 @@ do {
     print("FAIL transfer engine: \(error)")
 }
 
+// MARK: - Undo records
+
+do {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let performer = OperationUndo()
+
+    // Move: undoing puts the item back where it came from.
+    let from = root.appendingPathComponent("from.txt")
+    let to = root.appendingPathComponent("to.txt")
+    try Data("payload".utf8).write(to: from)
+    try FileManager.default.moveItem(at: from, to: to)
+    let moveRecord = FileOperationRecord(kind: .move, pairs: [.init(source: from, target: to)])
+    check(moveRecord.title == "Move “from.txt”", "move record has a menu title")
+    let moveBack = try await performer.perform(moveRecord, forward: false)
+    check(FileManager.default.fileExists(atPath: from.path), "undoing a move restores the source")
+    check(!FileManager.default.fileExists(atPath: to.path), "undoing a move removes the target")
+    check(moveBack.kind == .move && moveBack.pairs.first?.source == to, "undoing a move yields the reverse move")
+
+    // Redo applies the stored inverse backwards, which moves it forward again.
+    let moveForward = try await performer.perform(moveBack, forward: false)
+    check(FileManager.default.fileExists(atPath: to.path), "redoing a move writes the target again")
+    check(moveForward.pairs.first?.source == from, "redoing a move yields the original move")
+    _ = try await performer.perform(moveForward, forward: false)
+
+    // Copy: undoing trashes what was created.
+    let copyTarget = root.appendingPathComponent("copy.txt")
+    try FileManager.default.copyItem(at: from, to: copyTarget)
+    let copyRecord = FileOperationRecord(kind: .copy, pairs: [.init(source: from, target: copyTarget)])
+    let copyUndo = try await performer.perform(copyRecord, forward: false)
+    check(!FileManager.default.fileExists(atPath: copyTarget.path), "undoing a copy removes the copy")
+    check(copyUndo.kind == .trash, "undoing a copy remembers the trashed item")
+    if let trashURL = copyUndo.pairs.first?.target {
+        check(FileManager.default.fileExists(atPath: trashURL.path), "the copy landed in the Trash")
+        try? FileManager.default.removeItem(at: trashURL)
+    }
+
+    // Trash: undoing restores the item from the Trash.
+    let doomed = root.appendingPathComponent("doomed.txt")
+    try Data("bye".utf8).write(to: doomed)
+    let trashed = try await LocalFileProvider().trash(doomed)
+    let trashRecord = FileOperationRecord(kind: .trash, pairs: [.init(source: doomed, target: trashed)])
+    let restoreRecord = try await performer.perform(trashRecord, forward: false)
+    check(FileManager.default.fileExists(atPath: doomed.path), "undoing a trash restores the item")
+    check(!FileManager.default.fileExists(atPath: trashed.path), "the trashed copy is gone after restore")
+    check(restoreRecord.kind == .move, "undoing a trash yields a move out of the Trash")
+    let reTrashed = try await performer.perform(restoreRecord, forward: false)
+    check(FileManager.default.fileExists(atPath: doomed.path) == false, "redoing a trash removes the item again")
+    if let trashURL = reTrashed.pairs.first?.target {
+        try? FileManager.default.removeItem(at: trashURL)
+    }
+
+    // New folder: undoing removes the folder.
+    let folder = root.appendingPathComponent("fresh", isDirectory: true)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+    let folderRecord = FileOperationRecord(kind: .createDirectory, pairs: [.init(source: folder, target: folder)])
+    let folderUndo = try await performer.perform(folderRecord, forward: false)
+    check(!FileManager.default.fileExists(atPath: folder.path), "undoing a new folder removes it")
+    if let trashURL = folderUndo.pairs.first?.target {
+        try? FileManager.default.removeItem(at: trashURL)
+    }
+} catch {
+    failures += 1
+    print("FAIL undo records: \(error)")
+}
+
 // MARK: - Per-folder view settings
 
 do {
