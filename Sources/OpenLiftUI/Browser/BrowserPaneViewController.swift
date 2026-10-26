@@ -130,6 +130,7 @@ public final class BrowserPaneViewController: NSViewController {
         tableView.dataSource = self
         tableView.delegate = self
         tableView.onActivate = { [weak self] in self?.activate() }
+        tableView.onQuickLook = { [weak self] in self?.performQuickLook() }
         tableView.target = self
         tableView.doubleAction = #selector(tableDoubleClicked(_:))
         tableView.menu = makeContextMenu()
@@ -193,7 +194,15 @@ public final class BrowserPaneViewController: NSViewController {
     private func makeContextMenu() -> NSMenu {
         let menu = NSMenu()
         menu.addItem(withTitle: "Open", action: #selector(openSelection), keyEquivalent: "")
+        let openWithItem = NSMenuItem(title: "Open With", action: nil, keyEquivalent: "")
+        let openWithMenu = NSMenu(title: "Open With")
+        openWithMenu.delegate = self
+        openWithItem.submenu = openWithMenu
+        menu.addItem(openWithItem)
         menu.addItem(withTitle: "Open in Other Pane", action: #selector(openInOtherPane), keyEquivalent: "")
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Quick Look", action: #selector(quickLookAction), keyEquivalent: "")
+        menu.addItem(withTitle: "Get Info", action: #selector(getInfoAction), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Cut", action: #selector(cut(_:)), keyEquivalent: "")
         menu.addItem(withTitle: "Copy", action: #selector(copy(_:)), keyEquivalent: "")
@@ -360,6 +369,48 @@ public final class BrowserPaneViewController: NSViewController {
             onOpenDirectory?(item.url)
         } else {
             NSWorkspace.shared.open(item.url)
+        }
+    }
+
+    /// Shows (or dismisses) Quick Look for the current selection.
+    public func performQuickLook() {
+        let urls = selectedItems.map(\.url)
+        guard !urls.isEmpty else { return }
+        QuickLookController.shared.present(urls)
+    }
+
+    @objc func quickLookAction() {
+        performQuickLook()
+    }
+
+    @objc func getInfoAction() {
+        let urls = selectedItems.map(\.url)
+        guard !urls.isEmpty else { return }
+        NotificationCenter.default.post(
+            name: .openLiftGetInfo,
+            object: self,
+            userInfo: ["urls": urls]
+        )
+    }
+
+    @objc func openWithApplication(_ sender: Any?) {
+        guard let application = (sender as? NSMenuItem)?.representedObject as? URL,
+              let url = focusedItem?.url else { return }
+        OpenWithMenu.open(url, with: application)
+    }
+
+    @objc func chooseOpenWithApplication(_ sender: Any?) {
+        guard let url = focusedItem?.url else { return }
+        let panel = NSOpenPanel()
+        panel.message = "Choose an application to open “\(url.lastPathComponent)”."
+        panel.prompt = "Open"
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.begin { response in
+            guard response == .OK, let application = panel.url else { return }
+            OpenWithMenu.open(url, with: application)
         }
     }
 
@@ -786,10 +837,23 @@ public final class BrowserPaneViewController: NSViewController {
 /// active leaves commands (copy, trash, paste) pointed at the other pane.
 private final class ActivatingTableView: NSTableView {
     var onActivate: (() -> Void)?
+    var onQuickLook: (() -> Void)?
 
     override func mouseDown(with event: NSEvent) {
         onActivate?()
         super.mouseDown(with: event)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        // Space is Quick Look, as in Finder. Only without modifiers, so it
+        // still reaches type-select when one is held.
+        if event.keyCode == 49,
+           event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty,
+           let onQuickLook {
+            onQuickLook()
+            return
+        }
+        super.keyDown(with: event)
     }
 }
 
@@ -945,6 +1009,40 @@ extension BrowserPaneViewController: NSTableViewDataSource, NSTableViewDelegate 
     }
 }
 
+// MARK: - Open With submenu
+
+extension BrowserPaneViewController: NSMenuDelegate {
+    public func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        guard let url = focusedItem?.url else {
+            let empty = menu.addItem(withTitle: "No Selection", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            return
+        }
+        for application in OpenWithMenu.applications(for: url) {
+            let entry = NSMenuItem(
+                title: OpenWithMenu.displayName(for: application),
+                action: #selector(openWithApplication(_:)),
+                keyEquivalent: ""
+            )
+            entry.target = self
+            entry.representedObject = application
+            entry.image = NSWorkspace.shared.icon(forFile: application.path)
+            menu.addItem(entry)
+        }
+        menu.addItem(.separator())
+        let other = NSMenuItem(
+            title: "Other…",
+            action: #selector(chooseOpenWithApplication(_:)),
+            keyEquivalent: ""
+        )
+        other.target = self
+        menu.addItem(other)
+    }
+}
+
 public extension Notification.Name {
     static let openLiftOpenInOtherPane = Notification.Name("OpenLiftOpenInOtherPane")
+    /// Requests the Get Info panel for the URLs in `userInfo["urls"]`.
+    static let openLiftGetInfo = Notification.Name("openLiftGetInfo")
 }

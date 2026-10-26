@@ -39,9 +39,9 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned
 
 ## M3 — Comfort ⬜
 
-- [ ] Quick Look panel and preview
-- [ ] Get Info / inspector
-- [ ] Open With
+- [x] Quick Look panel and preview (Space, ⌘Y)
+- [x] Get Info / inspector (⌘I, multi-selection)
+- [x] Open With (menu bar and context menu)
 - [ ] Search in current folder
 - [ ] Create ZIP archive
 - [ ] Icon view (`NSCollectionView`)

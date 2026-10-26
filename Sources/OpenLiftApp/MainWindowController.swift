@@ -17,6 +17,7 @@ public final class MainWindowController: NSWindowController {
     private let viewSettingsStore: ViewSettingsStore
     private let history = OperationHistory()
     private var activityWindowController: ActivityWindowController?
+    private var infoWindowController: InfoWindowController?
 
     private var isSinglePane = false
     private var activePaneIndex = 0
@@ -154,6 +155,12 @@ public final class MainWindowController: NSWindowController {
             name: .openLiftOpenInOtherPane,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleGetInfo(_:)),
+            name: .openLiftGetInfo,
+            object: nil
+        )
     }
 
     private func configureSidebar() {
@@ -187,6 +194,29 @@ public final class MainWindowController: NSWindowController {
         leftTabs.activePane.isActivePane = index == 0
         rightTabs.activePane.isActivePane = index == 1
         updateWindowTitle()
+    }
+
+    // MARK: - Quick Look and info
+
+    @objc func quickLook(_ sender: Any?) {
+        activePane.performQuickLook()
+    }
+
+    @objc func showInfo(_ sender: Any?) {
+        presentInfo(for: activePane.selectedItems.map(\.url))
+    }
+
+    @objc private func handleGetInfo(_ notification: Notification) {
+        guard let urls = notification.userInfo?["urls"] as? [URL], !urls.isEmpty else { return }
+        presentInfo(for: urls)
+    }
+
+    private func presentInfo(for urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        if infoWindowController == nil {
+            infoWindowController = InfoWindowController()
+        }
+        infoWindowController?.showInfo(for: urls)
     }
 
     // MARK: - Activity
@@ -418,6 +448,8 @@ extension MainWindowController: NSMenuItemValidation {
             return !activePane.selectedItems.isEmpty
         case #selector(paste(_:)):
             return !FileClipboard.shared.urls.isEmpty
+        case #selector(quickLook(_:)), #selector(showInfo(_:)):
+            return !activePane.selectedItems.isEmpty
         default:
             return true
         }
@@ -479,5 +511,66 @@ extension MainWindowController: NSToolbarDelegate {
         }
         item.target = self
         return item
+    }
+}
+
+
+// MARK: - Open With menu
+
+extension MainWindowController: NSMenuDelegate {
+    public func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        guard let file = activePane.selectedItems.first?.url else {
+            let empty = menu.addItem(withTitle: "No Selection", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            return
+        }
+
+        let applications = OpenWithMenu.applications(for: file)
+        if applications.isEmpty {
+            let empty = menu.addItem(withTitle: "No Applications", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+        }
+        for application in applications {
+            let item = NSMenuItem(
+                title: OpenWithMenu.displayName(for: application),
+                action: #selector(openSelectionWith(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = application
+            item.image = NSWorkspace.shared.icon(forFile: application.path)
+            menu.addItem(item)
+        }
+
+        menu.addItem(.separator())
+        let other = NSMenuItem(
+            title: "Other…",
+            action: #selector(chooseOpenWithApplication(_:)),
+            keyEquivalent: ""
+        )
+        other.target = self
+        menu.addItem(other)
+    }
+
+    @objc private func openSelectionWith(_ sender: Any?) {
+        guard let application = (sender as? NSMenuItem)?.representedObject as? URL,
+              let file = activePane.selectedItems.first?.url else { return }
+        OpenWithMenu.open(file, with: application)
+    }
+
+    @objc private func chooseOpenWithApplication(_ sender: Any?) {
+        guard let file = activePane.selectedItems.first?.url else { return }
+        let panel = NSOpenPanel()
+        panel.message = "Choose an application to open “\(file.lastPathComponent)”."
+        panel.prompt = "Open"
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.begin { response in
+            guard response == .OK, let application = panel.url else { return }
+            OpenWithMenu.open(file, with: application)
+        }
     }
 }

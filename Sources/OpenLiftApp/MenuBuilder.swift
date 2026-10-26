@@ -61,6 +61,13 @@ public enum MenuBuilder {
         menu.addItem(makeItem("Duplicate", #selector(MainWindowController.duplicateSelection(_:)), "d", [.command], target))
         menu.addItem(.separator())
         menu.addItem(makeItem("Open", #selector(MainWindowController.openSelection(_:)), "o", [.command], target))
+        let openWithItem = NSMenuItem(title: "Open With", action: nil, keyEquivalent: "")
+        let openWithMenu = NSMenu(title: "Open With")
+        openWithMenu.delegate = target as? NSMenuDelegate
+        openWithItem.submenu = openWithMenu
+        menu.addItem(openWithItem)
+        menu.addItem(makeItem("Get Info", #selector(MainWindowController.showInfo(_:)), "i", [.command], target))
+        menu.addItem(makeItem("Quick Look", #selector(MainWindowController.quickLook(_:)), "y", [.command], target))
         menu.addItem(.separator())
         menu.addItem(makeItem("Copy to Other Pane", #selector(MainWindowController.copyToOtherPane(_:)), "c", [.command, .control], target))
         menu.addItem(makeItem("Move to Other Pane", #selector(MainWindowController.moveToOtherPane(_:)), "m", [.command, .control], target))

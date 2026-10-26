@@ -28,7 +28,8 @@ Early development. The local-file MVP is in progress:
 | Transfers: progress, cancel, conflicts with “apply to all” | done |
 | Undo / redo (copy/move/rename/trash/new folder) | done |
 | Activity window (live progress, session log) | done |
-| Quick Look, Get Info, search, icon view | planned (M3) |
+| Quick Look, Get Info, Open With | done |
+| Search, ZIP, icon view, settings | planned (M3) |
 | Remote providers (SFTP, FTP, WebDAV, S3, cloud) | planned (post-MVP) |
 
 ## Requirements
@@ -84,6 +85,8 @@ Sources/
                       PaneTabBarView (path bar, table, status bar)
     Clipboard/        FileClipboard — file URLs + cut marker on NSPasteboard
     Activity/         ActivityWindowController — live progress + session log
+    Info/             InfoWindowController — Get Info panel
+    Preview/          QuickLookController, OpenWithMenu
     Sidebar/          SidebarViewController (favorites + mounted volumes)
   OpenLiftApp/        application shell
     MainWindowController  window, split view, command routing, toolbar
@@ -138,6 +141,8 @@ See [`docs/spec/mvp.md`](docs/spec/mvp.md) for the full MVP specification and
 | Refresh | ⌘R |
 | Cancel a running transfer | Esc |
 | Activity window | ⌥⌘A |
+| Quick Look | Space or ⌘Y |
+| Get Info | ⌘I |
 | Show Hidden Files | ⇧⌘. |
 | Show Sidebar | ⌃⌘S |
 | Single Pane | ⌘\ |
