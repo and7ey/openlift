@@ -196,6 +196,12 @@ public final class MainWindowController: NSWindowController {
         updateWindowTitle()
     }
 
+    // MARK: - Search
+
+    @objc func find(_ sender: Any?) {
+        activePane.beginSearch()
+    }
+
     // MARK: - Quick Look and info
 
     @objc func quickLook(_ sender: Any?) {
@@ -318,6 +324,8 @@ public final class MainWindowController: NSWindowController {
     }
     @objc public func refresh(_ sender: Any?) { activePane.model.reload() }
     @objc public func openSelection(_ sender: Any?) { activePane.openSelection() }
+
+    @objc public func compressSelection(_ sender: Any?) { activePane.compressSelection() }
 
     @objc public func toggleHiddenFiles(_ sender: Any?) {
         activePane.model.settings.showHidden.toggle()
@@ -449,6 +457,8 @@ extension MainWindowController: NSMenuItemValidation {
         case #selector(paste(_:)):
             return !FileClipboard.shared.urls.isEmpty
         case #selector(quickLook(_:)), #selector(showInfo(_:)):
+            return !activePane.selectedItems.isEmpty
+        case #selector(compressSelection(_:)):
             return !activePane.selectedItems.isEmpty
         default:
             return true

@@ -29,6 +29,10 @@ public final class BrowserPaneViewController: NSViewController {
     private var operationVerb = "Copying"
     private var operationProgressText: String?
     private var activeTransferToken: CancellationToken?
+    private let searchField = NSSearchField()
+    private var searchBarHeight: NSLayoutConstraint?
+    private var searchVisible = false
+    nonisolated(unsafe) private var searchKeyMonitor: Any?
 
     private var iconCache: [String: NSImage] = [:]
     /// Selection is remembered by URL so grouping/refresh re-selection is stable.
@@ -53,10 +57,12 @@ public final class BrowserPaneViewController: NSViewController {
         container.translatesAutoresizingMaskIntoConstraints = false
 
         configurePathControl()
+        configureSearchField()
         configureTable()
         configureStatusBar()
 
         container.addSubview(pathControl)
+        container.addSubview(searchField)
         container.addSubview(scrollView)
         container.addSubview(operationBar)
         container.addSubview(cancelButton)
@@ -65,13 +71,20 @@ public final class BrowserPaneViewController: NSViewController {
 
         let operationBarHeight = operationBar.heightAnchor.constraint(equalToConstant: 0)
         self.operationBarHeight = operationBarHeight
+        let searchBarHeight = searchField.heightAnchor.constraint(equalToConstant: 0)
+        self.searchBarHeight = searchBarHeight
 
         NSLayoutConstraint.activate([
             pathControl.topAnchor.constraint(equalTo: container.topAnchor, constant: 6),
             pathControl.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
             pathControl.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
 
-            scrollView.topAnchor.constraint(equalTo: pathControl.bottomAnchor, constant: 6),
+            searchField.topAnchor.constraint(equalTo: pathControl.bottomAnchor, constant: 2),
+            searchField.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
+            searchField.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
+            searchBarHeight,
+
+            scrollView.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 3),
             scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: operationBar.topAnchor, constant: -2),
@@ -108,6 +121,12 @@ public final class BrowserPaneViewController: NSViewController {
         view.window?.makeFirstResponder(tableView)
     }
 
+    deinit {
+        if let monitor = searchKeyMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+    }
+
     // MARK: - Configuration
 
     private func configurePathControl() {
@@ -118,6 +137,18 @@ public final class BrowserPaneViewController: NSViewController {
         pathControl.action = #selector(pathControlClicked(_:))
         pathControl.translatesAutoresizingMaskIntoConstraints = false
         pathControl.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    }
+
+    private func configureSearchField() {
+        searchField.placeholderString = "Search in “\(model.directory.lastPathComponent)”"
+        searchField.controlSize = .small
+        searchField.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        searchField.sendsSearchStringImmediately = true
+        searchField.delegate = self
+        searchField.target = self
+        searchField.action = #selector(searchChanged(_:))
+        searchField.isHidden = true
+        searchField.translatesAutoresizingMaskIntoConstraints = false
     }
 
     private func configureTable() {
@@ -211,6 +242,7 @@ public final class BrowserPaneViewController: NSViewController {
         menu.addItem(withTitle: "New Folder", action: #selector(newFolderAction), keyEquivalent: "")
         menu.addItem(withTitle: "Rename…", action: #selector(renameAction), keyEquivalent: "")
         menu.addItem(withTitle: "Duplicate", action: #selector(duplicateAction), keyEquivalent: "")
+        menu.addItem(withTitle: "Compress", action: #selector(compressAction), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Move to Trash", action: #selector(moveToTrashAction), keyEquivalent: "")
         menu.addItem(.separator())
@@ -238,6 +270,10 @@ public final class BrowserPaneViewController: NSViewController {
 
     private func reloadView() {
         pathControl.url = model.directory
+        searchField.placeholderString = "Search in “\(model.directory.lastPathComponent)”"
+        if model.searchQuery.isEmpty, searchField.currentEditor() == nil {
+            searchField.stringValue = ""
+        }
         tableView.reloadData()
         if !selectedURLCache.isEmpty {
             var indexes = IndexSet()
@@ -268,7 +304,12 @@ public final class BrowserPaneViewController: NSViewController {
         }
         let count = model.displayItems.count
         let selected = tableView.selectedRowIndexes.count
-        var text = count == 1 ? "1 item" : "\(count) items"
+        var text: String
+        if model.searchQuery.isEmpty {
+            text = count == 1 ? "1 item" : "\(count) items"
+        } else {
+            text = "\(count) of \(model.items.count) items"
+        }
         if selected > 0 {
             text += ", \(selected) selected"
         }
@@ -370,6 +411,48 @@ public final class BrowserPaneViewController: NSViewController {
         } else {
             NSWorkspace.shared.open(item.url)
         }
+    }
+
+    /// Reveals the in-folder search field, or closes it when already open.
+    public func beginSearch() {
+        if searchVisible {
+            endSearch()
+            return
+        }
+        searchField.placeholderString = "Search in “\(model.directory.lastPathComponent)”"
+        searchVisible = true
+        searchField.isHidden = false
+        searchBarHeight?.constant = 24
+
+        // The field editor consumes Escape before it reaches the pane, so the
+        // search bar gets its own local monitor while it is open.
+        searchKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard event.keyCode == 53 else { return event }
+            self?.endSearch()
+            return nil
+        }
+
+        view.window?.makeFirstResponder(searchField)
+        searchField.currentEditor()?.selectAll(nil)
+    }
+
+    /// Hides the search field and restores the full listing.
+    public func endSearch() {
+        guard searchVisible || !model.searchQuery.isEmpty else { return }
+        searchVisible = false
+        if let monitor = searchKeyMonitor {
+            NSEvent.removeMonitor(monitor)
+            searchKeyMonitor = nil
+        }
+        searchField.stringValue = ""
+        searchBarHeight?.constant = 0
+        searchField.isHidden = true
+        model.searchQuery = ""
+        view.window?.makeFirstResponder(tableView)
+    }
+
+    @objc private func searchChanged(_ sender: NSSearchField) {
+        model.searchQuery = sender.stringValue.trimmingCharacters(in: .whitespaces)
     }
 
     /// Shows (or dismisses) Quick Look for the current selection.
@@ -522,6 +605,36 @@ public final class BrowserPaneViewController: NSViewController {
             )
             model.reload()
         }
+    }
+
+    /// Compresses the selection into a ZIP next to it.
+    public func compressSelection() {
+        let items = selectedItems
+        guard !items.isEmpty else { return }
+        let sources = items.map(\.url)
+        let destination = ArchiveCreator.destination(for: sources, in: model.directory)
+        let title = sources.count == 1
+            ? "Compress “\(sources[0].lastPathComponent)”"
+            : "Compress \(sources.count) items"
+        let activityID = ActivityLog.shared.begin(
+            title: title,
+            detail: "\(sources.count) item\(sources.count == 1 ? "" : "s") → “\(destination.lastPathComponent)”"
+        )
+
+        Task {
+            do {
+                _ = try await ArchiveCreator().createArchive(containing: sources, to: destination)
+                ActivityLog.shared.finish(activityID, status: .completed)
+                model.reload()
+            } catch {
+                ActivityLog.shared.finish(activityID, status: .failed, message: error.localizedDescription)
+                present(error: error)
+            }
+        }
+    }
+
+    @objc func compressAction() {
+        compressSelection()
     }
 
     @objc func moveToTrashAction() {
@@ -731,8 +844,12 @@ public final class BrowserPaneViewController: NSViewController {
         activeTransferToken?.cancel()
     }
 
-    /// Escape cancels a running transfer.
+    /// Escape closes the search bar first, otherwise cancels a running transfer.
     public override func cancelOperation(_ sender: Any?) {
+        if searchVisible {
+            endSearch()
+            return
+        }
         if let token = activeTransferToken {
             token.cancel()
             return
@@ -1006,6 +1123,24 @@ extension BrowserPaneViewController: NSTableViewDataSource, NSTableViewDelegate 
         guard let descriptor = tableView.sortDescriptors.first,
               let key = descriptor.key.flatMap(SortKey.init(rawValue:)) else { return }
         model.applySort(key, ascending: descriptor.ascending)
+    }
+}
+
+// MARK: - Search field
+
+extension BrowserPaneViewController: NSSearchFieldDelegate {
+    public func control(
+        _ control: NSControl,
+        textView: NSTextView,
+        doCommandBy commandSelector: Selector
+    ) -> Bool {
+        // Escape closes the search bar even though the field editor would
+        // otherwise just clear the text.
+        if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+            endSearch()
+            return true
+        }
+        return false
     }
 }
 

@@ -29,6 +29,15 @@ public final class BrowserModel {
         }
     }
 
+    /// Case-insensitive filter applied to the current folder. Set to an empty
+    /// string to show everything.
+    public var searchQuery: String = "" {
+        didSet {
+            guard oldValue != searchQuery else { return }
+            notify()
+        }
+    }
+
     /// Called on the main actor whenever visible state changes.
     public var onChange: (() -> Void)?
     /// Called when a load fails, with a user-presentable error.
@@ -56,9 +65,10 @@ public final class BrowserModel {
 
     // MARK: - Derived state
 
-    /// Items in display order.
+    /// Items in display order, narrowed by `searchQuery` when it is set.
     public var displayItems: [FileItem] {
-        FileItemOrdering.sorted(items, by: settings.sort)
+        let sorted = FileItemOrdering.sorted(items, by: settings.sort)
+        return FileItemOrdering.filtered(sorted, by: searchQuery)
     }
 
     /// Items grouped for sectioned presentation.
@@ -86,6 +96,7 @@ public final class BrowserModel {
             backStack.append(directory)
             forwardStack.removeAll()
         }
+        searchQuery = ""
         directory = standardized
         applyStoredSettings()
         items = []
@@ -95,6 +106,7 @@ public final class BrowserModel {
     public func goBack() {
         guard let previous = backStack.popLast() else { return }
         forwardStack.append(directory)
+        searchQuery = ""
         directory = previous
         applyStoredSettings()
         items = []
@@ -104,6 +116,7 @@ public final class BrowserModel {
     public func goForward() {
         guard let next = forwardStack.popLast() else { return }
         backStack.append(directory)
+        searchQuery = ""
         directory = next
         applyStoredSettings()
         items = []

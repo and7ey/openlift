@@ -29,7 +29,8 @@ Early development. The local-file MVP is in progress:
 | Undo / redo (copy/move/rename/trash/new folder) | done |
 | Activity window (live progress, session log) | done |
 | Quick Look, Get Info, Open With | done |
-| Search, ZIP, icon view, settings | planned (M3) |
+| Search in folder, ZIP archives | done |
+| Icon view, settings, shortcuts | planned (M3) |
 | Remote providers (SFTP, FTP, WebDAV, S3, cloud) | planned (post-MVP) |
 
 ## Requirements
@@ -106,6 +107,10 @@ Design notes:
   then written under a hidden staging name and renamed into place, so a
   cancelled or failed operation never leaves a partial file; metadata is
   copied with `copyfile(3)`.
+- Search is a live, case-insensitive name filter on the current folder
+  (`BrowserModel.searchQuery`); it does not walk into subfolders.
+- “Compress” builds a ZIP with the system `zip` tool, so there is no archive
+  dependency; the work runs off the main actor and is logged in Activity.
 - `ActivityLog` is an in-memory session log shared by the panes and the
   Activity window (Window ▸ Activity). Running transfers update one entry in
   place, so the log doubles as a progress view and as the operation history.
@@ -143,6 +148,7 @@ See [`docs/spec/mvp.md`](docs/spec/mvp.md) for the full MVP specification and
 | Activity window | ⌥⌘A |
 | Quick Look | Space or ⌘Y |
 | Get Info | ⌘I |
+| Find in folder | ⌘F |
 | Show Hidden Files | ⇧⌘. |
 | Show Sidebar | ⌃⌘S |
 | Single Pane | ⌘\ |

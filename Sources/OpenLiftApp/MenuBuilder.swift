@@ -59,6 +59,7 @@ public enum MenuBuilder {
         menu.addItem(makeItem("New Folder", #selector(MainWindowController.newFolder(_:)), "n", [.command, .shift], target))
         menu.addItem(makeItem("Rename…", #selector(MainWindowController.renameSelection(_:)), "\r", [], target))
         menu.addItem(makeItem("Duplicate", #selector(MainWindowController.duplicateSelection(_:)), "d", [.command], target))
+        menu.addItem(makeItem("Compress", #selector(MainWindowController.compressSelection(_:)), "", [], target))
         menu.addItem(.separator())
         menu.addItem(makeItem("Open", #selector(MainWindowController.openSelection(_:)), "o", [.command], target))
         let openWithItem = NSMenuItem(title: "Open With", action: nil, keyEquivalent: "")
@@ -95,6 +96,8 @@ public enum MenuBuilder {
         menu.addItem(makeItem("Cut", #selector(MainWindowController.cut(_:)), "x", [.command], target))
         menu.addItem(makeItem("Copy", #selector(MainWindowController.copy(_:)), "c", [.command], target))
         menu.addItem(makeItem("Paste", #selector(MainWindowController.paste(_:)), "v", [.command], target))
+        menu.addItem(.separator())
+        menu.addItem(makeItem("Find in Folder…", #selector(MainWindowController.find(_:)), "f", [.command], target))
         menu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         item.submenu = menu
         return item

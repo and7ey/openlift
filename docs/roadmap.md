@@ -42,8 +42,8 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned
 - [x] Quick Look panel and preview (Space, ⌘Y)
 - [x] Get Info / inspector (⌘I, multi-selection)
 - [x] Open With (menu bar and context menu)
-- [ ] Search in current folder
-- [ ] Create ZIP archive
+- [x] Search in current folder (live name filter, ⌘F)
+- [x] Create ZIP archive (single item or selection)
 - [ ] Icon view (`NSCollectionView`)
 - [ ] Settings window
 - [ ] Keyboard shortcut customization

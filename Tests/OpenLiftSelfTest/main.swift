@@ -44,6 +44,19 @@ func makeRoot() throws -> URL {
     return root
 }
 
+func zipListing(_ url: URL) throws -> String {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+    process.arguments = ["-Z1", url.path]
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = Pipe()
+    try process.run()
+    process.waitUntilExit()
+    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    return String(decoding: data, as: UTF8.self)
+}
+
 // MARK: - Ordering
 
 let unordered = [item("b.txt"), item("Folder", directory: true), item("a.txt")]
@@ -274,6 +287,46 @@ do {
 } catch {
     failures += 1
     print("FAIL transfer engine: \(error)")
+}
+
+// MARK: - Search filter and archives
+
+do {
+    // In-folder search is a name filter, case- and diacritic-insensitive.
+    let report = item("Report.txt")
+    let photo = item("photo.png", directory: true)
+    let second = item("REPORT-2.pdf")
+    check(FileItemOrdering.filtered([report, photo, second], by: "report").count == 2, "search filters names case-insensitively")
+    check(FileItemOrdering.filtered([report, photo], by: "  ").count == 2, "blank search keeps everything")
+    check(FileItemOrdering.filtered([report, photo], by: "zzz").isEmpty, "search can match nothing")
+
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let folder = root.appendingPathComponent("folder", isDirectory: true)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    try Data("deep".utf8).write(to: folder.appendingPathComponent("deep.txt"))
+    let single = root.appendingPathComponent("one.txt")
+    try Data("one".utf8).write(to: single)
+
+    let singleDestination = ArchiveCreator.destination(for: [single], in: root)
+    check(singleDestination.lastPathComponent == "one.txt.zip", "single file archive is named name.zip")
+    let folderDestination = ArchiveCreator.destination(for: [folder], in: root)
+    check(folderDestination.lastPathComponent == "folder.zip", "single folder archive is named folder.zip")
+
+    let destination = ArchiveCreator.destination(for: [single, folder], in: root)
+    check(destination.lastPathComponent == "Archive.zip", "multi-item archive is Archive.zip")
+    let result = try await ArchiveCreator().createArchive(containing: [single, folder], to: destination)
+    check(FileManager.default.fileExists(atPath: destination.path), "zip archive is created")
+    check(result.itemCount == 2, "zip archive reports its input count")
+    let listing = try zipListing(destination)
+    check(listing.contains("one.txt"), "zip keeps a selected file at the top level")
+    check(listing.contains("folder/deep.txt"), "zip keeps a selected folder and its contents")
+
+    let nextDestination = ArchiveCreator.destination(for: [single, folder], in: root)
+    check(nextDestination.lastPathComponent == "Archive copy.zip", "zip naming avoids overwriting an archive")
+} catch {
+    failures += 1
+    print("FAIL search/archives: \(error)")
 }
 
 // MARK: - Undo records

@@ -3,6 +3,13 @@ import Foundation
 /// Sorting and grouping helpers shared by every browser mode.
 public enum FileItemOrdering {
 
+    /// Case- and diacritic-insensitive name filter used by in-folder search.
+    public static func filtered(_ items: [FileItem], by query: String) -> [FileItem] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return items }
+        return items.filter { $0.name.localizedStandardContains(trimmed) }
+    }
+
     /// Sorts a listing according to `descriptor`.
     ///
     /// Comparison is localized and case-insensitive for names, directories
