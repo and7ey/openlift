@@ -16,7 +16,7 @@ public enum MenuBuilder {
         mainMenu.addItem(editMenuItem())
         mainMenu.addItem(viewMenuItem(target: target))
         mainMenu.addItem(goMenuItem(target: target))
-        mainMenu.addItem(windowMenuItem())
+        mainMenu.addItem(windowMenuItem(target: target))
         mainMenu.addItem(helpMenuItem())
 
         return mainMenu
@@ -53,6 +53,9 @@ public enum MenuBuilder {
         let item = NSMenuItem()
         let menu = NSMenu(title: "File")
 
+        menu.addItem(makeItem("New Tab", #selector(MainWindowController.newTab(_:)), "t", [.command], target))
+        menu.addItem(makeItem("Close Tab", #selector(MainWindowController.closeTab(_:)), "w", [.command], target))
+        menu.addItem(.separator())
         menu.addItem(makeItem("New Folder", #selector(MainWindowController.newFolder(_:)), "n", [.command, .shift], target))
         menu.addItem(makeItem("Rename…", #selector(MainWindowController.renameSelection(_:)), "\r", [], target))
         menu.addItem(makeItem("Duplicate", #selector(MainWindowController.duplicateSelection(_:)), "d", [.command], target))
@@ -66,8 +69,6 @@ public enum MenuBuilder {
         menu.addItem(.separator())
         menu.addItem(makeItem("Reveal in Finder", #selector(MainWindowController.revealInFinder(_:)), "r", [.command, .shift], target))
         menu.addItem(makeItem("Open in Terminal", #selector(MainWindowController.openInTerminal(_:)), "t", [.command, .control], target))
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
 
         item.submenu = menu
         return item
@@ -104,6 +105,14 @@ public enum MenuBuilder {
         sortItem.submenu = sortMenu
         menu.addItem(sortItem)
 
+        let groupItem = NSMenuItem(title: "Group by", action: nil, keyEquivalent: "")
+        let groupMenu = NSMenu(title: "Group by")
+        for key in GroupKey.allCases {
+            groupMenu.addItem(makeItem(key.title, #selector(MainWindowController.groupBy(_:)), "", [], target, represented: key.rawValue))
+        }
+        groupItem.submenu = groupMenu
+        menu.addItem(groupItem)
+
         menu.addItem(.separator())
         menu.addItem(makeItem("Show Hidden Files", #selector(MainWindowController.toggleHiddenFiles(_:)), ".", [.command, .shift], target))
         menu.addItem(makeItem("Refresh", #selector(MainWindowController.refresh(_:)), "r", [.command], target))
@@ -130,11 +139,14 @@ public enum MenuBuilder {
         return item
     }
 
-    private static func windowMenuItem() -> NSMenuItem {
+    private static func windowMenuItem(target: AnyObject) -> NSMenuItem {
         let item = NSMenuItem()
         let menu = NSMenu(title: "Window")
         menu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         menu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+        menu.addItem(.separator())
+        menu.addItem(makeItem("Show Next Tab", #selector(MainWindowController.showNextTab(_:)), "\t", [.control], target))
+        menu.addItem(makeItem("Show Previous Tab", #selector(MainWindowController.showPreviousTab(_:)), "\t", [.control, .shift], target))
         menu.addItem(.separator())
         menu.addItem(withTitle: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: "")
         NSApp.windowsMenu = menu

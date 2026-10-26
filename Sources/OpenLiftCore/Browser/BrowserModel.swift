@@ -18,7 +18,10 @@ public final class BrowserModel {
     public var settings: ViewSettings {
         didSet {
             guard oldValue != settings else { return }
-            if oldValue.showHidden != settings.showHidden {
+            if !isApplyingStoredSettings {
+                settingsStore?.set(settings, for: directory.path)
+            }
+            if oldValue.showHidden != settings.showHidden, !suppressReload {
                 reload()
             } else {
                 notify()
@@ -32,14 +35,23 @@ public final class BrowserModel {
     public var onError: ((Error) -> Void)?
 
     private let provider: FileProvider
+    private let settingsStore: ViewSettingsStore?
     private var loadTask: Task<Void, Never>?
     private var watcher: DirectoryWatcher?
     private var generation = 0
+    private var isApplyingStoredSettings = false
+    private var suppressReload = false
 
-    public init(provider: FileProvider, directory: URL, settings: ViewSettings = .default) {
+    public init(
+        provider: FileProvider,
+        directory: URL,
+        settings: ViewSettings = .default,
+        settingsStore: ViewSettingsStore? = nil
+    ) {
         self.provider = provider
+        self.settingsStore = settingsStore
         self.directory = directory
-        self.settings = settings
+        self.settings = settingsStore?.settings(for: directory.path) ?? settings
     }
 
     // MARK: - Derived state
@@ -75,6 +87,7 @@ public final class BrowserModel {
             forwardStack.removeAll()
         }
         directory = standardized
+        applyStoredSettings()
         items = []
         load()
     }
@@ -83,6 +96,7 @@ public final class BrowserModel {
         guard let previous = backStack.popLast() else { return }
         forwardStack.append(directory)
         directory = previous
+        applyStoredSettings()
         items = []
         load()
     }
@@ -91,6 +105,7 @@ public final class BrowserModel {
         guard let next = forwardStack.popLast() else { return }
         backStack.append(directory)
         directory = next
+        applyStoredSettings()
         items = []
         load()
     }
@@ -161,6 +176,16 @@ public final class BrowserModel {
     private func notify() {
         onChange?()
         NotificationCenter.default.post(name: .openLiftBrowserModelDidChange, object: self)
+    }
+
+    /// Applies the settings remembered for the current folder, if any.
+    private func applyStoredSettings() {
+        guard let stored = settingsStore?.settings(for: directory.path) else { return }
+        suppressReload = true
+        isApplyingStoredSettings = true
+        settings = stored
+        isApplyingStoredSettings = false
+        suppressReload = false
     }
 
     /// Keeps a single FSEvents stream pointed at the current directory.

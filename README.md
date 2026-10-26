@@ -22,7 +22,8 @@ Early development. The local-file MVP is in progress:
 | New folder, rename, duplicate, trash, reveal, open in Terminal | done |
 | Live refresh via FSEvents | done |
 | Window/favorites persistence | done |
-| Tabs, drag & drop, copy/move between panes | drag & drop + copy/move done; tabs pending |
+| Tabs per pane, mounted volumes, grouping, per-folder settings | done |
+| Drag & drop, copy/move between panes | done |
 | Operation queue, conflict resolution, undo | conflicts (basic) done; queue/undo pending (M2) |
 | Quick Look, Get Info, search, icon view | planned (M3) |
 | Remote providers (SFTP, FTP, WebDAV, S3, cloud) | planned (post-MVP) |
@@ -59,8 +60,9 @@ Release build:
 swift run OpenLiftSelfTest
 ```
 
-The runner covers ordering/grouping, favorites persistence and the local
-provider (listing, hidden files, move, create, delete). When Xcode is
+The runner covers ordering/grouping, favorites persistence, per-folder view
+settings, tab-aware window state, the local provider (listing, hidden files,
+move, create, delete), file transfers and the FSEvents watcher. When Xcode is
 available, `Tests/OpenLiftTests/OpenLiftTests.swift` can be re-enabled as a
 `swift-testing` target in `Package.swift`.
 
@@ -69,13 +71,14 @@ available, `Tests/OpenLiftTests/OpenLiftTests.swift` can be re-enabled as a
 ```
 Sources/
   OpenLiftCore/       platform-independent model, providers, persistence
-    Browser/          BrowserModel — listing, history, sorting, FSEvents
+    Browser/          BrowserModel — listing, history, sorting, grouping, FSEvents
     Model/            FileItem, SortDescriptor, ViewSettings, Favorite
     Provider/         FileProvider protocol, LocalFileProvider, DirectoryWatcher
-    Persistence/      FavoritesStore, WindowStateStore
+    Persistence/      FavoritesStore, WindowStateStore, ViewSettingsStore
   OpenLiftUI/         AppKit views
-    Browser/          BrowserPaneViewController (path bar, table, status bar)
-    Sidebar/          SidebarViewController (favorites tree)
+    Browser/          BrowserTabsViewController, BrowserPaneViewController,
+                      PaneTabBarView (path bar, table, status bar)
+    Sidebar/          SidebarViewController (favorites + mounted volumes)
   OpenLiftApp/        application shell
     MainWindowController  window, split view, command routing, toolbar
     MenuBuilder           menu bar
@@ -100,6 +103,9 @@ See [`docs/spec/mvp.md`](docs/spec/mvp.md) for the full MVP specification and
 
 | Action | Shortcut |
 |---|---|
+| New Tab | ⌘T |
+| Close Tab | ⌘W |
+| Next / Previous Tab | ⌃⇥ / ⌃⇧⇥ |
 | New Folder | ⇧⌘N |
 | Rename | ↩ |
 | Duplicate | ⌘D |

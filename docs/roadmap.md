@@ -11,18 +11,18 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned
 - [x] `.app` bundle script, ad-hoc signing
 - [x] Dependency-free self-test runner
 
-## M1 — Browser 🚧
+## M1 — Browser ✅
 
 - [x] Directory listing with metadata
 - [x] Sortable columns (name, size, kind, modified), folders first
 - [x] Navigation: double-click, back/forward/up/home, path bar, sidebar
 - [x] Hidden files toggle
-- [x] Live refresh (FSEvents, debounced)
+- [x] Live refresh (FSEvents, debounced, off the main thread)
 - [x] Window state + favorites persistence
-- [ ] Tabs per pane
-- [ ] Mounted volumes in the sidebar
-- [ ] Grouping (kind/name)
-- [ ] Remember per-folder view settings
+- [x] Tabs per pane (new/close/switch, restored on launch)
+- [x] Mounted volumes in the sidebar
+- [x] Grouping (kind/name)
+- [x] Remember per-folder view settings
 
 ## M2 — Operations 🚧
 

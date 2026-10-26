@@ -62,7 +62,7 @@ public extension Favorite {
                 Favorite(id: id("00000000-0000-0000-0000-00000000F005"), name: "Downloads", path: home + "/Downloads", symbol: "arrow.down.circle"),
                 Favorite(id: id("00000000-0000-0000-0000-00000000F006"), name: "Applications", path: "/Applications", symbol: "square.grid.2x2")
             ]),
-            Favorite(id: id("00000000-0000-0000-0000-00000000F007"), kind: .group, name: "Locations", symbol: "externaldrive", children: [
+            Favorite(id: id("00000000-0000-0000-0000-00000000F007"), kind: .smart, name: "Locations", symbol: "externaldrive", children: [
                 Favorite(id: id("00000000-0000-0000-0000-00000000F008"), name: "Macintosh HD", path: "/", symbol: "internaldrive")
             ])
         ]

@@ -158,6 +158,86 @@ do {
     print("FAIL transfers: \(error)")
 }
 
+// MARK: - Per-folder view settings
+
+do {
+    let suite = "OpenLiftSelfTest.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite) ?? .standard
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    let store = ViewSettingsStore(defaults: defaults)
+    var folderSettings = ViewSettings.default
+    folderSettings.sort = SortDescriptor(key: .size, ascending: false, foldersFirst: true)
+    folderSettings.group = .kind
+    folderSettings.showHidden = true
+
+    store.set(folderSettings, for: "/tmp/openlift-a")
+    check(store.settings(for: "/tmp/openlift-a") == folderSettings, "view settings persist per path")
+    check(store.settings(for: "/tmp/openlift-b") == nil, "an unseen folder has no stored settings")
+
+    let model = BrowserModel(
+        provider: LocalFileProvider(),
+        directory: URL(fileURLWithPath: "/tmp/openlift-a", isDirectory: true),
+        settings: .default,
+        settingsStore: store
+    )
+    check(model.settings == folderSettings, "browser model adopts stored folder settings")
+
+    store.remove(for: "/tmp/openlift-a")
+    check(store.settings(for: "/tmp/openlift-a") == nil, "settings can be removed")
+}
+
+// MARK: - Window state with tabs
+
+do {
+    let first = PaneState(path: "/tmp", settings: .default)
+    let second = PaneState(path: "/Users")
+    let state = WindowState(
+        frame: CGRect(x: 0, y: 0, width: 900, height: 600),
+        left: first,
+        right: second,
+        leftTabs: [first, second],
+        rightTabs: [second],
+        leftActiveTab: 1,
+        rightActiveTab: 0
+    )
+
+    let data = try JSONEncoder().encode(state)
+    let decoded = try JSONDecoder().decode(WindowState.self, from: data)
+    check(decoded == state, "window state with tabs survives a JSON round trip")
+    check(decoded.leftTabs?.count == 2, "both tabs are preserved")
+
+    // Older builds wrote no tab keys at all; those states must still load.
+    if var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+        for key in ["leftTabs", "rightTabs", "leftActiveTab", "rightActiveTab"] {
+            object.removeValue(forKey: key)
+        }
+        let legacyData = try JSONSerialization.data(withJSONObject: object)
+        let legacy = try JSONDecoder().decode(WindowState.self, from: legacyData)
+        check(legacy.leftTabs == nil, "legacy window state without tab keys decodes")
+        check(legacy.left.path == "/tmp", "legacy window state keeps the pane path")
+    } else {
+        check(false, "window state encodes as a JSON object")
+    }
+}
+
+// MARK: - Directory watcher
+
+do {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let fired = DispatchSemaphore(value: 0)
+    let watcher = DirectoryWatcher(debounceInterval: 0.05) { fired.signal() }
+    watcher.watch(root)
+    // Stream creation is asynchronous, so give the control queue a moment.
+    try await Task.sleep(for: .milliseconds(500))
+
+    try Data("change".utf8).write(to: root.appendingPathComponent("created.txt"))
+    check(fired.wait(timeout: .now() + 3) == .success, "directory watcher reports a created file")
+    watcher.stop()
+}
+
 // MARK: - Summary
 
 print("")

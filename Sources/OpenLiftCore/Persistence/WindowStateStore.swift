@@ -31,6 +31,11 @@ public struct WindowState: Codable, Equatable, Sendable {
     public var left: PaneState
     public var right: PaneState
     public var activePane: Int
+    /// Tabs per pane. `nil` in states written by older builds.
+    public var leftTabs: [PaneState]?
+    public var rightTabs: [PaneState]?
+    public var leftActiveTab: Int?
+    public var rightActiveTab: Int?
 
     public init(
         frame: CGRect,
@@ -40,7 +45,11 @@ public struct WindowState: Codable, Equatable, Sendable {
         horizontalPanes: Bool = false,
         left: PaneState,
         right: PaneState,
-        activePane: Int = 0
+        activePane: Int = 0,
+        leftTabs: [PaneState]? = nil,
+        rightTabs: [PaneState]? = nil,
+        leftActiveTab: Int? = nil,
+        rightActiveTab: Int? = nil
     ) {
         self.frame = frame
         self.sidebarWidth = sidebarWidth
@@ -50,6 +59,10 @@ public struct WindowState: Codable, Equatable, Sendable {
         self.left = left
         self.right = right
         self.activePane = activePane
+        self.leftTabs = leftTabs
+        self.rightTabs = rightTabs
+        self.leftActiveTab = leftActiveTab
+        self.rightActiveTab = rightActiveTab
     }
 
     public static func makeDefault(home: String = NSHomeDirectory()) -> WindowState {

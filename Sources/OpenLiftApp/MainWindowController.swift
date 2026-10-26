@@ -2,49 +2,54 @@ import AppKit
 import OpenLiftCore
 import OpenLiftUI
 
-/// Owns the browser window: sidebar, two panes, toolbar and command routing.
+/// Owns the browser window: sidebar, two tabbed panes, toolbar and command routing.
 ///
-/// Mirrors ForkLift's `FileWindow` role — a single hub that validates and
-/// executes commands coming from the menu, toolbar and keyboard.
+/// Mirrors a classic dual-pane manager's window controller: one hub validates
+/// and executes commands from the menu, toolbar and keyboard.
 @MainActor
 public final class MainWindowController: NSWindowController {
     private let sidebarViewController: SidebarViewController
-    private let leftPane: BrowserPaneViewController
-    private let rightPane: BrowserPaneViewController
+    private let leftTabs: BrowserTabsViewController
+    private let rightTabs: BrowserTabsViewController
     private let rootSplit: NSSplitViewController
     private let panesSplit: NSSplitViewController
     private let stateStore: WindowStateStore
+    private let viewSettingsStore: ViewSettingsStore
 
     private var isSinglePane = false
     private var activePaneIndex = 0
 
-    private var activePane: BrowserPaneViewController {
-        activePaneIndex == 0 ? leftPane : rightPane
+    private var activeTabs: BrowserTabsViewController {
+        activePaneIndex == 0 ? leftTabs : rightTabs
     }
 
-    private var otherPane: BrowserPaneViewController {
-        activePaneIndex == 0 ? rightPane : leftPane
+    private var otherTabs: BrowserTabsViewController {
+        activePaneIndex == 0 ? rightTabs : leftTabs
     }
+
+    private var activePane: BrowserPaneViewController { activeTabs.activePane }
+    private var otherPane: BrowserPaneViewController { otherTabs.activePane }
 
     public init(stateStore: WindowStateStore = WindowStateStore()) {
         self.stateStore = stateStore
+        let settingsStore = ViewSettingsStore()
+        viewSettingsStore = settingsStore
+
         let provider = LocalFileProvider()
         let state = stateStore.load()
 
         sidebarViewController = SidebarViewController()
-        leftPane = BrowserPaneViewController(
-            model: BrowserModel(
-                provider: provider,
-                directory: URL(fileURLWithPath: state.left.path, isDirectory: true),
-                settings: state.left.settings
-            )
+        leftTabs = BrowserTabsViewController(
+            provider: provider,
+            settingsStore: settingsStore,
+            initialTabs: state.leftTabs ?? [state.left],
+            activeTab: state.leftActiveTab ?? 0
         )
-        rightPane = BrowserPaneViewController(
-            model: BrowserModel(
-                provider: provider,
-                directory: URL(fileURLWithPath: state.right.path, isDirectory: true),
-                settings: state.right.settings
-            )
+        rightTabs = BrowserTabsViewController(
+            provider: provider,
+            settingsStore: settingsStore,
+            initialTabs: state.rightTabs ?? [state.right],
+            activeTab: state.rightActiveTab ?? 0
         )
 
         panesSplit = NSSplitViewController()
@@ -52,14 +57,13 @@ public final class MainWindowController: NSWindowController {
 
         let window = NSWindow(
             contentRect: state.frame,
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "OpenLift"
         window.minSize = NSSize(width: 720, height: 420)
-        window.tabbingMode = .preferred
-        window.titlebarAppearsTransparent = false
+        window.tabbingMode = .disallowed
 
         super.init(window: window)
 
@@ -69,6 +73,26 @@ public final class MainWindowController: NSWindowController {
         configureToolbar()
         observeModels()
         updateWindowTitle()
+
+        if state.singlePane {
+            isSinglePane = true
+            panesSplit.splitViewItems.last?.isCollapsed = true
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let total = self.panesSplit.splitView.bounds.width
+            if total > 0, !self.isSinglePane {
+                self.panesSplit.splitView.setPosition(total * state.splitRatio, ofDividerAt: 0)
+            }
+            if state.sidebarWidth > 0 {
+                let width = min(max(state.sidebarWidth, 160), 340)
+                self.rootSplit.splitView.setPosition(width, ofDividerAt: 0)
+            }
+            self.activatePane(self.activePaneIndex)
+            let tabs = self.activePaneIndex == 0 ? self.leftTabs : self.rightTabs
+            tabs.activePane.activate()
+        }
     }
 
     @available(*, unavailable)
@@ -93,24 +117,23 @@ public final class MainWindowController: NSWindowController {
         rootSplit.addSplitViewItem(sidebarItem)
         rootSplit.addSplitViewItem(panesItem)
 
-        let leftItem = NSSplitViewItem(viewController: leftPane)
+        let leftItem = NSSplitViewItem(viewController: leftTabs)
         leftItem.minimumThickness = 260
-        let rightItem = NSSplitViewItem(viewController: rightPane)
+        let rightItem = NSSplitViewItem(viewController: rightTabs)
         rightItem.minimumThickness = 260
 
         panesSplit.splitView.isVertical = true
         panesSplit.splitView.dividerStyle = .thin
         panesSplit.addSplitViewItem(leftItem)
         panesSplit.addSplitViewItem(rightItem)
-        panesSplit.splitView.setPosition(panesSplit.splitView.bounds.width * state.splitRatio, ofDividerAt: 0)
 
         window?.contentViewController = rootSplit
         window?.setFrame(state.frame, display: true)
     }
 
     private func configurePanes() {
-        leftPane.onActivate = { [weak self] in self?.activatePane(0) }
-        rightPane.onActivate = { [weak self] in self?.activatePane(1) }
+        leftTabs.onActivate = { [weak self] in self?.activatePane(0) }
+        rightTabs.onActivate = { [weak self] in self?.activatePane(1) }
 
         NotificationCenter.default.addObserver(
             self,
@@ -148,8 +171,8 @@ public final class MainWindowController: NSWindowController {
 
     private func activatePane(_ index: Int) {
         activePaneIndex = index
-        leftPane.isActivePane = index == 0
-        rightPane.isActivePane = index == 1
+        leftTabs.activePane.isActivePane = index == 0
+        rightTabs.activePane.isActivePane = index == 1
         updateWindowTitle()
     }
 
@@ -169,42 +192,45 @@ public final class MainWindowController: NSWindowController {
     @objc private func handleOpenInOtherPane(_ notification: Notification) {
         guard let sender = notification.object as? BrowserPaneViewController,
               let url = notification.userInfo?["url"] as? URL else { return }
-        let target = sender === leftPane ? rightPane : leftPane
-        target.model.navigate(to: url)
-        target.activate()
+        let target = sender === leftTabs.activePane ? rightTabs : leftTabs
+        target.activePane.model.navigate(to: url)
+        target.activePane.activate()
     }
 
     // MARK: - State
 
     public func saveWindowState() {
         guard let window else { return }
+        let left = leftTabs.tabStates()
+        let right = rightTabs.tabStates()
+
         let state = WindowState(
             frame: window.frame,
-            sidebarWidth: 220,
+            sidebarWidth: sidebarWidth(),
             splitRatio: splitRatio(),
             singlePane: isSinglePane,
             horizontalPanes: false,
-            left: paneState(for: leftPane),
-            right: paneState(for: rightPane),
-            activePane: activePaneIndex
+            left: left.first ?? PaneState(path: NSHomeDirectory()),
+            right: right.first ?? PaneState(path: NSHomeDirectory()),
+            activePane: activePaneIndex,
+            leftTabs: left,
+            rightTabs: right,
+            leftActiveTab: leftTabs.activeIndex,
+            rightActiveTab: rightTabs.activeIndex
         )
         stateStore.save(state)
     }
 
     private func splitRatio() -> Double {
-        let total = panesSplit.splitView.bounds.width
+        let left = leftTabs.view.frame.width
+        let right = rightTabs.view.frame.width
+        let total = left + right
         guard total > 0 else { return 0.5 }
-        let position = panesSplit.splitView.subviews.first?.frame.width ?? total / 2
-        return Double(position / total)
+        return Double(left / total)
     }
 
-    private func paneState(for pane: BrowserPaneViewController) -> PaneState {
-        PaneState(
-            path: pane.model.directory.path,
-            backHistory: pane.model.backStack.map(\.path),
-            forwardHistory: pane.model.forwardStack.map(\.path),
-            settings: pane.model.settings
-        )
+    private func sidebarWidth() -> Double {
+        Double(sidebarViewController.view.frame.width)
     }
 
     // MARK: - Commands
@@ -212,7 +238,9 @@ public final class MainWindowController: NSWindowController {
     @objc public func goBack(_ sender: Any?) { activePane.model.goBack() }
     @objc public func goForward(_ sender: Any?) { activePane.model.goForward() }
     @objc public func goUp(_ sender: Any?) { activePane.model.goUp() }
-    @objc public func goHome(_ sender: Any?) { activePane.model.navigate(to: URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)) }
+    @objc public func goHome(_ sender: Any?) {
+        activePane.model.navigate(to: URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true))
+    }
     @objc public func refresh(_ sender: Any?) { activePane.model.reload() }
     @objc public func openSelection(_ sender: Any?) { activePane.openSelection() }
 
@@ -226,10 +254,10 @@ public final class MainWindowController: NSWindowController {
     }
 
     @objc public func swapPanes(_ sender: Any?) {
-        let leftURL = leftPane.model.directory
-        let rightURL = rightPane.model.directory
-        leftPane.model.navigate(to: rightURL)
-        rightPane.model.navigate(to: leftURL)
+        let leftURL = leftTabs.activePane.model.directory
+        let rightURL = rightTabs.activePane.model.directory
+        leftTabs.activePane.model.navigate(to: rightURL)
+        rightTabs.activePane.model.navigate(to: leftURL)
     }
 
     @objc public func toggleSidebar(_ sender: Any?) {
@@ -280,6 +308,35 @@ public final class MainWindowController: NSWindowController {
               let raw = item.representedObject as? String,
               let key = SortKey(rawValue: raw) else { return }
         activePane.model.applySort(key, ascending: true)
+    }
+
+    @objc public func groupBy(_ sender: Any?) {
+        guard let item = sender as? NSMenuItem,
+              let raw = item.representedObject as? String,
+              let key = GroupKey(rawValue: raw) else { return }
+        activePane.model.settings.group = key
+    }
+
+    // MARK: - Tabs
+
+    @objc public func newTab(_ sender: Any?) {
+        activeTabs.newTab()
+    }
+
+    @objc public func closeTab(_ sender: Any?) {
+        if activeTabs.panes.count > 1 {
+            activeTabs.closeActiveTab()
+        } else {
+            window?.performClose(sender)
+        }
+    }
+
+    @objc public func showNextTab(_ sender: Any?) {
+        activeTabs.selectNextTab()
+    }
+
+    @objc public func showPreviousTab(_ sender: Any?) {
+        activeTabs.selectPreviousTab()
     }
 
     @objc public func showActivities(_ sender: Any?) {

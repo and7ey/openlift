@@ -54,10 +54,41 @@ public final class SidebarViewController: NSViewController {
     }
 
     public func reloadFavorites() {
-        let favorites = store.load()
+        // `.smart` groups are generated from the live system on every load.
+        var favorites = store.load().filter { $0.kind != .smart }
+        favorites.append(Self.dynamicLocations())
         roots = favorites.map(FavoriteNode.init)
         outlineView.reloadData()
         roots.forEach { outlineView.expandItem($0) }
+    }
+
+    /// Builds the Locations section from mounted volumes.
+    private static func dynamicLocations() -> Favorite {
+        let keys: [URLResourceKey] = [.volumeNameKey, .volumeIsLocalKey, .volumeIsBrowsableKey]
+        let volumes = FileManager.default.mountedVolumeURLs(
+            includingResourceValuesForKeys: keys,
+            options: [.skipHiddenVolumes]
+        ) ?? []
+
+        var children: [Favorite] = []
+        for url in volumes {
+            let values = try? url.resourceValues(forKeys: Set(keys))
+            guard values?.volumeIsBrowsable ?? true else { continue }
+
+            let isRoot = url.path == "/"
+            let name = isRoot ? "Macintosh HD" : (values?.volumeName ?? url.lastPathComponent)
+            let isLocal = values?.volumeIsLocal ?? true
+            let symbol = isRoot ? "internaldrive" : (isLocal ? "externaldrive" : "externaldrive.connected.to.line.below")
+            children.append(Favorite(kind: .path, name: name, path: url.path, symbol: symbol))
+        }
+
+        children.sort { lhs, rhs in
+            if lhs.path == "/" { return true }
+            if rhs.path == "/" { return false }
+            return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+        }
+
+        return Favorite(kind: .smart, name: "Locations", symbol: "externaldrive", children: children)
     }
 
     public override func viewDidAppear() {

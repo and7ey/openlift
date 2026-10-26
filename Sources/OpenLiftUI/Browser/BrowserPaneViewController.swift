@@ -23,6 +23,8 @@ public final class BrowserPaneViewController: NSViewController {
     private let progressIndicator = NSProgressIndicator()
 
     private var iconCache: [String: NSImage] = [:]
+    /// Selection is remembered by URL so grouping/refresh re-selection is stable.
+    private var selectedURLCache: Set<URL> = []
 
     public init(model: BrowserModel) {
         self.model = model
@@ -168,12 +170,32 @@ public final class BrowserPaneViewController: NSViewController {
 
     // MARK: - Rendering
 
+    private enum Row {
+        case group(String)
+        case item(FileItem)
+    }
+
+    private var rows: [Row] {
+        guard model.settings.group != .none else {
+            return model.displayItems.map(Row.item)
+        }
+        return model.groupedItems.flatMap { group -> [Row] in
+            [.group(group.title)] + group.items.map(Row.item)
+        }
+    }
+
     private func reloadView() {
         pathControl.url = model.directory
-        let selected = Set(tableView.selectedRowIndexes)
         tableView.reloadData()
-        let rows = IndexSet(selected.filter { $0 < model.displayItems.count })
-        tableView.selectRowIndexes(rows, byExtendingSelection: false)
+        if !selectedURLCache.isEmpty {
+            var indexes = IndexSet()
+            for (index, row) in rows.enumerated() {
+                if case .item(let item) = row, selectedURLCache.contains(item.url) {
+                    indexes.insert(index)
+                }
+            }
+            tableView.selectRowIndexes(indexes, byExtendingSelection: false)
+        }
         updateStatus()
         updateProgress()
         syncSortDescriptors()
@@ -247,17 +269,18 @@ public final class BrowserPaneViewController: NSViewController {
     // MARK: - Selection
 
     public var selectedItems: [FileItem] {
-        tableView.selectedRowIndexes.compactMap { index in
-            let items = model.displayItems
-            return index < items.count ? items[index] : nil
+        let rows = self.rows
+        return tableView.selectedRowIndexes.compactMap { index in
+            guard index < rows.count, case .item(let item) = rows[index] else { return nil }
+            return item
         }
     }
 
     public var focusedItem: FileItem? {
         let row = tableView.selectedRow >= 0 ? tableView.selectedRow : tableView.clickedRow
-        let items = model.displayItems
-        guard row >= 0, row < items.count else { return nil }
-        return items[row]
+        let rows = self.rows
+        guard row >= 0, row < rows.count, case .item(let item) = rows[row] else { return nil }
+        return item
     }
 
     public func activate() {
@@ -482,34 +505,56 @@ public final class BrowserPaneViewController: NSViewController {
 
 extension BrowserPaneViewController: NSTableViewDataSource, NSTableViewDelegate {
     public func numberOfRows(in tableView: NSTableView) -> Int {
-        model.displayItems.count
+        rows.count
     }
 
     public func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         guard let column = tableColumn else { return nil }
-        let items = model.displayItems
-        guard row < items.count else { return nil }
-        let item = items[row]
+        let rows = self.rows
+        guard row < rows.count else { return nil }
 
-        let identifier = column.identifier
-        let cell = reusableCell(for: identifier, showsIcon: identifier.rawValue == "name")
-        guard let textField = cell.textField else { return cell }
+        switch rows[row] {
+        case .group(let title):
+            let identifier = NSUserInterfaceItemIdentifier("group")
+            let cell = reusableCell(for: identifier, showsIcon: false)
+            if column.identifier.rawValue == "name" {
+                cell.textField?.stringValue = title.uppercased()
+                cell.textField?.font = .systemFont(ofSize: NSFont.smallSystemFontSize, weight: .semibold)
+                cell.textField?.textColor = .secondaryLabelColor
+            } else {
+                cell.textField?.stringValue = ""
+            }
+            return cell
 
-        switch identifier.rawValue {
-        case "name":
-            textField.stringValue = item.name
-            cell.imageView?.image = icon(for: item)
-            textField.textColor = item.isHidden ? .secondaryLabelColor : .labelColor
-        case "size":
-            textField.stringValue = item.isDirectory ? "--" : Formatting.size(item.size)
-        case "kind":
-            textField.stringValue = item.kind
-        case "modified":
-            textField.stringValue = Formatting.modified(item.modified)
-        default:
-            textField.stringValue = ""
+        case .item(let item):
+            let identifier = column.identifier
+            let cell = reusableCell(for: identifier, showsIcon: identifier.rawValue == "name")
+            guard let textField = cell.textField else { return cell }
+
+            switch identifier.rawValue {
+            case "name":
+                textField.stringValue = item.name
+                textField.font = .systemFont(ofSize: NSFont.systemFontSize)
+                cell.imageView?.image = icon(for: item)
+                textField.textColor = item.isHidden ? .secondaryLabelColor : .labelColor
+            case "size":
+                textField.stringValue = item.isDirectory ? "--" : Formatting.size(item.size)
+            case "kind":
+                textField.stringValue = item.kind
+            case "modified":
+                textField.stringValue = Formatting.modified(item.modified)
+            default:
+                textField.stringValue = ""
+            }
+            return cell
         }
-        return cell
+    }
+
+    public func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
+        let rows = self.rows
+        guard row < rows.count else { return false }
+        if case .group = rows[row] { return false }
+        return true
     }
 
     private func reusableCell(for identifier: NSUserInterfaceItemIdentifier, showsIcon: Bool) -> NSTableCellView {
@@ -549,6 +594,7 @@ extension BrowserPaneViewController: NSTableViewDataSource, NSTableViewDelegate 
     }
 
     public func tableViewSelectionDidChange(_ notification: Notification) {
+        selectedURLCache = Set(selectedItems.map(\.url))
         updateStatus()
         if tableView.selectedRowIndexes.isEmpty == false {
             activate()
@@ -558,9 +604,9 @@ extension BrowserPaneViewController: NSTableViewDataSource, NSTableViewDelegate 
     // MARK: - Drag & drop
 
     public func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
-        let items = model.displayItems
-        guard row < items.count else { return nil }
-        return items[row].url as NSURL
+        let rows = self.rows
+        guard row < rows.count, case .item(let item) = rows[row] else { return nil }
+        return item.url as NSURL
     }
 
     public func tableView(

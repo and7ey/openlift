@@ -7,10 +7,15 @@ import CoreServices
 /// unarchive, a build, a `git checkout`) triggers one reload instead of
 /// hundreds. Callbacks are delivered on a background queue; callers are
 /// responsible for hopping to their own isolation domain.
+///
+/// Stream creation runs on its own control queue: `FSEventStreamCreate` talks
+/// to `fseventsd` and can block for a noticeable moment, which must never
+/// happen on the main thread during navigation.
 public final class DirectoryWatcher: @unchecked Sendable {
     private var stream: FSEventStreamRef?
     private var watchedURL: URL?
-    private let queue = DispatchQueue(label: "dev.openlift.fsevents", qos: .utility)
+    private let controlQueue = DispatchQueue(label: "dev.openlift.fsevents.control")
+    private let eventQueue = DispatchQueue(label: "dev.openlift.fsevents.events", qos: .utility)
     private let debounceInterval: TimeInterval
     private let onChange: @Sendable () -> Void
 
@@ -23,15 +28,30 @@ public final class DirectoryWatcher: @unchecked Sendable {
     }
 
     deinit {
-        stop()
+        // Every queued closure captures `self` weakly, so once deallocation has
+        // begun nothing else can touch the stream and it is safe to drop here.
+        stopWatching()
     }
 
     /// Starts watching `url`. Restarts the stream only when the URL changes.
     public func watch(_ url: URL) {
+        controlQueue.async { [weak self] in
+            self?.startWatching(url)
+        }
+    }
+
+    public func stop() {
+        controlQueue.async { [weak self] in
+            self?.stopWatching()
+        }
+    }
+
+    // MARK: - Control queue
+
+    private func startWatching(_ url: URL) {
         let standardized = url.standardizedFileURL
         if watchedURL == standardized, stream != nil { return }
-        stop()
-        watchedURL = standardized
+        stopWatching()
 
         var context = FSEventStreamContext(
             version: 0,
@@ -64,11 +84,12 @@ public final class DirectoryWatcher: @unchecked Sendable {
         }
 
         self.stream = stream
-        FSEventStreamSetDispatchQueue(stream, queue)
+        watchedURL = standardized
+        FSEventStreamSetDispatchQueue(stream, eventQueue)
         FSEventStreamStart(stream)
     }
 
-    public func stop() {
+    private func stopWatching() {
         stateLock.lock()
         pendingWorkItem?.cancel()
         pendingWorkItem = nil
@@ -92,6 +113,6 @@ public final class DirectoryWatcher: @unchecked Sendable {
         pendingWorkItem = item
         stateLock.unlock()
 
-        queue.asyncAfter(deadline: .now() + debounceInterval, execute: item)
+        eventQueue.asyncAfter(deadline: .now() + debounceInterval, execute: item)
     }
 }
