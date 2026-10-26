@@ -337,6 +337,24 @@ public final class MainWindowController: NSWindowController {
         allPanes.forEach { $0.model.settings = .default }
     }
 
+    // MARK: - Navigation
+
+    @objc func goToFolder(_ sender: Any?) {
+        let alert = NSAlert()
+        alert.messageText = "Go to Folder"
+        alert.informativeText = "Enter a path, for example ~/Pictures or /tmp."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+        field.stringValue = activePane.model.directory.path
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Go")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let path = (field.stringValue as NSString).expandingTildeInPath
+        guard !path.isEmpty else { return }
+        activePane.model.navigate(to: URL(fileURLWithPath: path, isDirectory: true))
+    }
+
     // MARK: - Search
 
     @objc func find(_ sender: Any?) {

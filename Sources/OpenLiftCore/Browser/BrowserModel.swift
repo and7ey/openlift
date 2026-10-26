@@ -8,7 +8,9 @@ import Foundation
 @MainActor
 public final class BrowserModel {
     public private(set) var directory: URL
-    public private(set) var items: [FileItem] = []
+    public private(set) var items: [FileItem] = [] {
+        didSet { invalidateDerivedCache() }
+    }
     public private(set) var isLoading = false
     public private(set) var lastError: Error?
 
@@ -21,6 +23,7 @@ public final class BrowserModel {
             if !isApplyingStoredSettings {
                 settingsStore?.set(settings, for: directory.path)
             }
+            invalidateDerivedCache()
             if oldValue.showHidden != settings.showHidden, !suppressReload {
                 reload()
             } else {
@@ -34,6 +37,7 @@ public final class BrowserModel {
     public var searchQuery: String = "" {
         didSet {
             guard oldValue != searchQuery else { return }
+            invalidateDerivedCache()
             notify()
         }
     }
@@ -50,6 +54,10 @@ public final class BrowserModel {
     private var generation = 0
     private var isApplyingStoredSettings = false
     private var suppressReload = false
+    /// Sorted/filtered and grouped views are expensive for large folders and
+    /// are recomputed only when items, sorting or the query changes.
+    private var displayCache: [FileItem]?
+    private var groupCache: [(title: String, items: [FileItem])]?
 
     public init(
         provider: FileProvider,
@@ -67,13 +75,24 @@ public final class BrowserModel {
 
     /// Items in display order, narrowed by `searchQuery` when it is set.
     public var displayItems: [FileItem] {
+        if let displayCache { return displayCache }
         let sorted = FileItemOrdering.sorted(items, by: settings.sort)
-        return FileItemOrdering.filtered(sorted, by: searchQuery)
+        let filtered = FileItemOrdering.filtered(sorted, by: searchQuery)
+        displayCache = filtered
+        return filtered
     }
 
     /// Items grouped for sectioned presentation.
     public var groupedItems: [(title: String, items: [FileItem])] {
-        FileItemOrdering.grouped(displayItems, by: settings.group)
+        if let groupCache { return groupCache }
+        let grouped = FileItemOrdering.grouped(displayItems, by: settings.group)
+        groupCache = grouped
+        return grouped
+    }
+
+    private func invalidateDerivedCache() {
+        displayCache = nil
+        groupCache = nil
     }
 
     public var canGoBack: Bool { !backStack.isEmpty }

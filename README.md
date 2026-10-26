@@ -61,6 +61,13 @@ Release build:
 ./Scripts/make-app.sh release
 ```
 
+The app icon lives in `Resources/OpenLift.icns`. Regenerate it after editing
+the vector-like drawing in `Scripts/make-icon.swift`:
+
+```sh
+./Scripts/make-icon.sh
+```
+
 ## Tests
 
 ```sh
@@ -69,9 +76,23 @@ swift run OpenLiftSelfTest
 
 The runner covers ordering/grouping, favorites persistence, per-folder view
 settings, tab-aware window state, the local provider (listing, hidden files,
-move, create, delete), file transfers and the FSEvents watcher. When Xcode is
+move, create, delete), file transfers, undo records, the activity log, search,
+archives, app settings and shortcuts — 107 checks, all dependency-free. When Xcode is
 available, `Tests/OpenLiftTests/OpenLiftTests.swift` can be re-enabled as a
 `swift-testing` target in `Package.swift`.
+
+## Performance
+
+```sh
+# Reuses /tmp/openlift-bench-<count> after the first run.
+Scripts/benchmark.sh 100000
+```
+
+On the development machine (release build, APFS, warm cache), a 100k-item
+folder lists in about 1.5 s and sorts in about 0.5 s. The browser caches the
+sorted/filtered/grouped view per change, so scrolling and selection do not
+re-sort the folder; AppKit only materializes visible rows. A 100k-folder
+session sits around 320 MB resident.
 
 ## Architecture
 

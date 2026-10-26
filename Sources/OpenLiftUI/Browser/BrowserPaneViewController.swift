@@ -40,12 +40,16 @@ public final class BrowserPaneViewController: NSViewController {
     private var iconCache: [String: NSImage] = [:]
     /// Selection is remembered by URL so grouping/refresh re-selection is stable.
     private var selectedURLCache: Set<URL> = []
+    /// Sorted rows and icon sections are built once per model change; building
+    /// them inside cells would sort a 100k-item folder dozens of times.
+    private var rowCache: [Row] = []
+    private var iconSectionCache: [(title: String, items: [FileItem])] = [("", [])]
 
     public init(model: BrowserModel) {
         self.model = model
         super.init(nibName: nil, bundle: nil)
         model.onChange = { [weak self] in self?.reloadView() }
-        model.onError = { [weak self] error in self?.present(error: error) }
+        model.onError = { [weak self] error in self?.presentListingError(error) }
     }
 
     @available(*, unavailable)
@@ -313,7 +317,9 @@ public final class BrowserPaneViewController: NSViewController {
         case item(FileItem)
     }
 
-    private var rows: [Row] {
+    private var rows: [Row] { rowCache }
+
+    private func makeRows() -> [Row] {
         guard model.settings.group != .none else {
             return model.displayItems.map(Row.item)
         }
@@ -322,12 +328,22 @@ public final class BrowserPaneViewController: NSViewController {
         }
     }
 
+    private func makeIconSections() -> [(title: String, items: [FileItem])] {
+        if model.settings.group == .none {
+            return [("", model.displayItems)]
+        }
+        return model.groupedItems.map { ($0.title, $0.items) }
+    }
+
     private func reloadView() {
         pathControl.url = model.directory
         searchField.placeholderString = "Search in “\(model.directory.lastPathComponent)”"
         if model.searchQuery.isEmpty, searchField.currentEditor() == nil {
             searchField.stringValue = ""
         }
+
+        rowCache = makeRows()
+        iconSectionCache = makeIconSections()
 
         let iconMode = model.settings.mode == .icon
         scrollView.isHidden = iconMode
@@ -366,12 +382,7 @@ public final class BrowserPaneViewController: NSViewController {
     }
 
     /// Sections shown by the icon view: grouping applies there too.
-    private var iconSections: [(title: String, items: [FileItem])] {
-        if model.settings.group == .none {
-            return [("", model.displayItems)]
-        }
-        return model.groupedItems.map { ($0.title, $0.items) }
-    }
+    private var iconSections: [(title: String, items: [FileItem])] { iconSectionCache }
 
     private func updateProgress() {
         if model.isLoading {
@@ -392,17 +403,25 @@ public final class BrowserPaneViewController: NSViewController {
             : tableView.selectedRowIndexes.count
         var text: String
         if model.searchQuery.isEmpty {
-            text = count == 1 ? "1 item" : "\(count) items"
+            text = Self.itemCountText(count)
         } else {
-            text = "\(count) of \(model.items.count) items"
+            text = "\(Self.number(count)) of \(Self.number(model.items.count)) items"
         }
         if selected > 0 {
-            text += ", \(selected) selected"
+            text += ", \(Self.number(selected)) selected"
         }
         if let free = availableCapacity() {
             text += " — \(Formatting.size(free)) available"
         }
         statusLabel.stringValue = text
+    }
+
+    private static func number(_ value: Int) -> String {
+        NumberFormatter.localizedString(from: NSNumber(value: value), number: .decimal)
+    }
+
+    private static func itemCountText(_ count: Int) -> String {
+        count == 1 ? "1 item" : "\(number(count)) items"
     }
 
     private func availableCapacity() -> Int64? {
@@ -436,17 +455,65 @@ public final class BrowserPaneViewController: NSViewController {
         return image
     }
 
+    private func presentListingError(_ error: Error) {
+        present(error: error, title: "Can’t open folder")
+    }
+
     private func present(error: Error) {
+        present(error: error, title: "The operation failed")
+    }
+
+    /// Shows an alert; permission failures offer a jump to Full Disk Access.
+    private func present(error: Error, title: String) {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "Can’t open folder"
+        alert.messageText = title
         alert.informativeText = error.localizedDescription
         alert.addButton(withTitle: "OK")
+
+        if Self.isPermissionDenied(error) {
+            alert.messageText = "Permission denied"
+            alert.informativeText = error.localizedDescription +
+                "\n\nIf this folder is protected, grant OpenLift access in System Settings ▸ " +
+                "Privacy & Security ▸ Full Disk Access, then try again."
+            alert.buttons.first?.title = "Open System Settings"
+            alert.addButton(withTitle: "Cancel")
+
+            let openSettings = {
+                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+            if let window = view.window {
+                alert.beginSheetModal(for: window) { response in
+                    if response == .alertFirstButtonReturn { openSettings() }
+                }
+            } else if alert.runModal() == .alertFirstButtonReturn {
+                openSettings()
+            }
+            return
+        }
+
         if let window = view.window {
             alert.beginSheetModal(for: window)
         } else {
             alert.runModal()
         }
+    }
+
+    private static func isPermissionDenied(_ error: Error) -> Bool {
+        if let providerError = error as? FileProviderError, case .permissionDenied = providerError {
+            return true
+        }
+        let nsError = error as NSError
+        if nsError.domain == NSCocoaErrorDomain {
+            return nsError.code == NSFileReadNoPermissionError
+                || nsError.code == NSFileWriteNoPermissionError
+        }
+        if nsError.domain == NSPOSIXErrorDomain {
+            return nsError.code == Int(EPERM) || nsError.code == Int(EACCES)
+        }
+        return false
     }
 
     // MARK: - Selection

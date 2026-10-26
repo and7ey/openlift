@@ -48,12 +48,12 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned
 - [x] Settings window (General, Activity, About)
 - [x] Keyboard shortcut customization (recorder, conflict check, defaults)
 
-## M4 — Stabilization ⬜
+## M4 — Stabilization 🚧
 
-- [ ] Unit/integration tests (XCTest or swift-testing)
-- [ ] 100k-file performance target
-- [ ] Permission error dialogs (Full Disk Access)
-- [ ] Release build, icon, versioning
+- [x] Unit/integration tests (dependency-free runner; XCTest when Xcode is available)
+- [x] 100k-file performance target (list ~1.5 s, cached views)
+- [x] Permission error dialogs (Full Disk Access shortcut)
+- [x] Release build, icon, versioning (0.1.0)
 - [ ] (later) Developer ID signing + notarization
 
 ## Post-MVP — Remote and advanced ⬜

@@ -8,6 +8,8 @@
     <string>OpenLift</string>
     <key>CFBundleIdentifier</key>
     <string>dev.openlift.OpenLift</string>
+    <key>CFBundleIconFile</key>
+    <string>OpenLift</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>

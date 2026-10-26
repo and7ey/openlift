@@ -16,6 +16,9 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_PATH/OpenLift" "$APP/Contents/MacOS/OpenLift"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+if [ -f "$ROOT/Resources/OpenLift.icns" ]; then
+    cp "$ROOT/Resources/OpenLift.icns" "$APP/Contents/Resources/OpenLift.icns"
+fi
 
 # Ad-hoc signature is enough for local development.
 codesign --force --sign - --timestamp=none "$APP" >/dev/null

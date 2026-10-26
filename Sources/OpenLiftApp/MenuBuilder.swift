@@ -151,6 +151,8 @@ public enum MenuBuilder {
         menu.addItem(makeItem("Forward", #selector(MainWindowController.goForward(_:)), "]", [.command], target))
         menu.addItem(makeItem("Enclosing Folder", #selector(MainWindowController.goUp(_:)), String(UnicodeScalar(NSUpArrowFunctionKey)!), [.command], target))
         menu.addItem(makeItem("Home", #selector(MainWindowController.goHome(_:)), "h", [.command, .shift], target))
+        menu.addItem(.separator())
+        menu.addItem(makeItem("Go to Folder…", #selector(MainWindowController.goToFolder(_:)), "g", [.command, .shift], target))
         item.submenu = menu
         return item
     }

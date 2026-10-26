@@ -37,6 +37,11 @@ let package = Package(
             name: "OpenLiftSelfTest",
             dependencies: ["OpenLiftCore"],
             path: "Tests/OpenLiftSelfTest"
+        ),
+        .executableTarget(
+            name: "OpenLiftBench",
+            dependencies: ["OpenLiftCore"],
+            path: "Sources/OpenLiftBench"
         )
     ]
 )
