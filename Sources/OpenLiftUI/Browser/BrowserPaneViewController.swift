@@ -21,6 +21,8 @@ public final class BrowserPaneViewController: NSViewController {
     private let pathControl = NSPathControl()
     private let tableView = ActivatingTableView()
     private let scrollView = NSScrollView()
+    private let iconScrollView = NSScrollView()
+    private let collectionView = BrowserCollectionView()
     private let statusLabel = NSTextField(labelWithString: "")
     private let progressIndicator = NSProgressIndicator()
     private let operationBar = NSProgressIndicator()
@@ -33,6 +35,7 @@ public final class BrowserPaneViewController: NSViewController {
     private var searchBarHeight: NSLayoutConstraint?
     private var searchVisible = false
     nonisolated(unsafe) private var searchKeyMonitor: Any?
+    private var isRestoringSelection = false
 
     private var iconCache: [String: NSImage] = [:]
     /// Selection is remembered by URL so grouping/refresh re-selection is stable.
@@ -59,11 +62,13 @@ public final class BrowserPaneViewController: NSViewController {
         configurePathControl()
         configureSearchField()
         configureTable()
+        configureCollectionView()
         configureStatusBar()
 
         container.addSubview(pathControl)
         container.addSubview(searchField)
         container.addSubview(scrollView)
+        container.addSubview(iconScrollView)
         container.addSubview(operationBar)
         container.addSubview(cancelButton)
         container.addSubview(statusLabel)
@@ -88,6 +93,11 @@ public final class BrowserPaneViewController: NSViewController {
             scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: operationBar.topAnchor, constant: -2),
+
+            iconScrollView.topAnchor.constraint(equalTo: scrollView.topAnchor),
+            iconScrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            iconScrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            iconScrollView.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
 
             operationBar.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
             operationBar.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
@@ -149,6 +159,50 @@ public final class BrowserPaneViewController: NSViewController {
         searchField.action = #selector(searchChanged(_:))
         searchField.isHidden = true
         searchField.translatesAutoresizingMaskIntoConstraints = false
+    }
+
+    private func configureCollectionView() {
+        let layout = NSCollectionViewFlowLayout()
+        layout.itemSize = NSSize(width: 104, height: 104)
+        layout.minimumInteritemSpacing = 8
+        layout.minimumLineSpacing = 12
+        layout.sectionInset = NSEdgeInsets(top: 8, left: 12, bottom: 12, right: 12)
+        layout.headerReferenceSize = NSSize(width: 0, height: 26)
+
+        collectionView.collectionViewLayout = layout
+        collectionView.dataSource = self
+        collectionView.delegate = self
+        collectionView.isSelectable = true
+        collectionView.allowsMultipleSelection = true
+        collectionView.backgroundColors = [NSColor.clear]
+        collectionView.register(
+            IconItemView.self,
+            forItemWithIdentifier: IconItemView.identifier
+        )
+        collectionView.register(
+            IconSectionHeader.self,
+            forSupplementaryViewOfKind: NSCollectionView.elementKindSectionHeader,
+            withIdentifier: IconSectionHeader.identifier
+        )
+        collectionView.registerForDraggedTypes([NSPasteboard.PasteboardType.fileURL])
+        collectionView.menu = makeContextMenu()
+        collectionView.onActivate = { [weak self] in self?.activate() }
+        collectionView.onQuickLook = { [weak self] in self?.performQuickLook() }
+
+        let doubleClick = NSClickGestureRecognizer(
+            target: self,
+            action: #selector(collectionDoubleClicked(_:))
+        )
+        doubleClick.numberOfClicksRequired = 2
+        collectionView.addGestureRecognizer(doubleClick)
+
+        iconScrollView.documentView = collectionView
+        iconScrollView.hasVerticalScroller = true
+        iconScrollView.autohidesScrollers = true
+        iconScrollView.drawsBackground = false
+        iconScrollView.isHidden = model.settings.mode != .icon
+        iconScrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.isHidden = model.settings.mode == .icon
     }
 
     private func configureTable() {
@@ -274,6 +328,11 @@ public final class BrowserPaneViewController: NSViewController {
         if model.searchQuery.isEmpty, searchField.currentEditor() == nil {
             searchField.stringValue = ""
         }
+
+        let iconMode = model.settings.mode == .icon
+        scrollView.isHidden = iconMode
+        iconScrollView.isHidden = !iconMode
+
         tableView.reloadData()
         if !selectedURLCache.isEmpty {
             var indexes = IndexSet()
@@ -284,9 +343,34 @@ public final class BrowserPaneViewController: NSViewController {
             }
             tableView.selectRowIndexes(indexes, byExtendingSelection: false)
         }
+
+        isRestoringSelection = true
+        collectionView.reloadData()
+        collectionView.selectionIndexPaths = []
+        if !selectedURLCache.isEmpty {
+            var paths = Set<IndexPath>()
+            for (section, group) in iconSections.enumerated() {
+                for (index, item) in group.items.enumerated() where selectedURLCache.contains(item.url) {
+                    paths.insert(IndexPath(item: index, section: section))
+                }
+            }
+            if !paths.isEmpty {
+                collectionView.selectItems(at: paths, scrollPosition: [])
+            }
+        }
+        isRestoringSelection = false
+
         updateStatus()
         updateProgress()
         syncSortDescriptors()
+    }
+
+    /// Sections shown by the icon view: grouping applies there too.
+    private var iconSections: [(title: String, items: [FileItem])] {
+        if model.settings.group == .none {
+            return [("", model.displayItems)]
+        }
+        return model.groupedItems.map { ($0.title, $0.items) }
     }
 
     private func updateProgress() {
@@ -303,7 +387,9 @@ public final class BrowserPaneViewController: NSViewController {
             return
         }
         let count = model.displayItems.count
-        let selected = tableView.selectedRowIndexes.count
+        let selected = model.settings.mode == .icon
+            ? collectionView.selectionIndexPaths.count
+            : tableView.selectedRowIndexes.count
         var text: String
         if model.searchQuery.isEmpty {
             text = count == 1 ? "1 item" : "\(count) items"
@@ -366,6 +452,14 @@ public final class BrowserPaneViewController: NSViewController {
     // MARK: - Selection
 
     public var selectedItems: [FileItem] {
+        if model.settings.mode == .icon {
+            let sections = iconSections
+            return collectionView.selectionIndexPaths.sorted().compactMap { indexPath -> FileItem? in
+                guard indexPath.section < sections.count,
+                      indexPath.item < sections[indexPath.section].items.count else { return nil }
+                return sections[indexPath.section].items[indexPath.item]
+            }
+        }
         let rows = self.rows
         return tableView.selectedRowIndexes.compactMap { index in
             guard index < rows.count, case .item(let item) = rows[index] else { return nil }
@@ -374,6 +468,9 @@ public final class BrowserPaneViewController: NSViewController {
     }
 
     public var focusedItem: FileItem? {
+        if model.settings.mode == .icon {
+            return selectedItems.first
+        }
         let row = tableView.selectedRow >= 0 ? tableView.selectedRow : tableView.clickedRow
         let rows = self.rows
         guard row >= 0, row < rows.count, case .item(let item) = rows[row] else { return nil }
@@ -382,7 +479,7 @@ public final class BrowserPaneViewController: NSViewController {
 
     public func activate() {
         isActivePane = true
-        view.window?.makeFirstResponder(tableView)
+        view.window?.makeFirstResponder(model.settings.mode == .icon ? collectionView : tableView)
         onActivate?()
     }
 
@@ -399,6 +496,17 @@ public final class BrowserPaneViewController: NSViewController {
     }
 
     @objc private func tableDoubleClicked(_ sender: Any?) {
+        activate()
+        openSelection()
+    }
+
+    @objc private func collectionDoubleClicked(_ sender: NSClickGestureRecognizer) {
+        let point = sender.location(in: collectionView)
+        if let indexPath = collectionView.indexPathForItem(at: point),
+           !collectionView.selectionIndexPaths.contains(indexPath) {
+            collectionView.selectionIndexPaths = [indexPath]
+            selectedURLCache = Set(selectedItems.map(\.url))
+        }
         activate()
         openSelection()
     }
@@ -971,6 +1079,227 @@ private final class ActivatingTableView: NSTableView {
             return
         }
         super.keyDown(with: event)
+    }
+}
+
+// MARK: - Icon view
+
+/// Collection view that reports activation, open-on-double-click and Space
+/// the same way the table does.
+private final class BrowserCollectionView: NSCollectionView {
+    var onActivate: (() -> Void)?
+    var onQuickLook: (() -> Void)?
+
+    override func mouseDown(with event: NSEvent) {
+        onActivate?()
+        super.mouseDown(with: event)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 49,
+           event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty,
+           let onQuickLook {
+            onQuickLook()
+            return
+        }
+        super.keyDown(with: event)
+    }
+}
+
+/// One file tile: icon above a two-line, centered name.
+private final class IconItemView: NSCollectionViewItem {
+    static let identifier = NSUserInterfaceItemIdentifier("IconItem")
+
+    private let iconView = NSImageView()
+    private let nameLabel = NSTextField(labelWithString: "")
+
+    override func loadView() {
+        let container = NSView()
+        container.wantsLayer = true
+
+        iconView.imageScaling = .scaleProportionallyUpOrDown
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+
+        nameLabel.alignment = .center
+        nameLabel.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        nameLabel.lineBreakMode = .byTruncatingMiddle
+        nameLabel.maximumNumberOfLines = 2
+        nameLabel.cell?.wraps = true
+        nameLabel.cell?.isScrollable = false
+        nameLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        container.addSubview(iconView)
+        container.addSubview(nameLabel)
+        NSLayoutConstraint.activate([
+            iconView.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
+            iconView.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 60),
+            iconView.heightAnchor.constraint(equalToConstant: 60),
+
+            nameLabel.topAnchor.constraint(equalTo: iconView.bottomAnchor, constant: 4),
+            nameLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 2),
+            nameLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -2)
+        ])
+        view = container
+    }
+
+    func configure(name: String, image: NSImage) {
+        nameLabel.stringValue = name
+        iconView.image = image
+        view.toolTip = name
+    }
+
+    override var isSelected: Bool {
+        didSet { updateBackground() }
+    }
+
+    override var highlightState: NSCollectionViewItem.HighlightState {
+        didSet { updateBackground() }
+    }
+
+    private func updateBackground() {
+        let selected = isSelected || highlightState == .forSelection
+        view.layer?.cornerRadius = 6
+        view.layer?.backgroundColor = selected
+            ? NSColor.selectedContentBackgroundColor.withAlphaComponent(0.22).cgColor
+            : NSColor.clear.cgColor
+    }
+}
+
+/// Group header above an icon-view section.
+private final class IconSectionHeader: NSView {
+    static let identifier = NSUserInterfaceItemIdentifier("IconSectionHeader")
+
+    private let label = NSTextField(labelWithString: "")
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        label.font = .boldSystemFont(ofSize: NSFont.smallSystemFontSize)
+        label.textColor = .secondaryLabelColor
+        label.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -12)
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    func configure(title: String) {
+        label.stringValue = title
+    }
+}
+
+// MARK: - Icon view data source
+
+extension BrowserPaneViewController: NSCollectionViewDataSource {
+    public func numberOfSections(in collectionView: NSCollectionView) -> Int {
+        iconSections.count
+    }
+
+    public func collectionView(_ collectionView: NSCollectionView, numberOfItemsInSection section: Int) -> Int {
+        guard section < iconSections.count else { return 0 }
+        return iconSections[section].items.count
+    }
+
+    public func collectionView(
+        _ collectionView: NSCollectionView,
+        itemForRepresentedObjectAt indexPath: IndexPath
+    ) -> NSCollectionViewItem {
+        let item = collectionView.makeItem(withIdentifier: IconItemView.identifier, for: indexPath)
+        guard let tile = item as? IconItemView,
+              indexPath.section < iconSections.count,
+              indexPath.item < iconSections[indexPath.section].items.count else {
+            return item
+        }
+        let file = iconSections[indexPath.section].items[indexPath.item]
+        tile.configure(name: file.name, image: icon(for: file))
+        return tile
+    }
+
+    public func collectionView(
+        _ collectionView: NSCollectionView,
+        viewForSupplementaryElementOfKind kind: NSCollectionView.SupplementaryElementKind,
+        at indexPath: IndexPath
+    ) -> NSView {
+        let header = collectionView.makeSupplementaryView(
+            ofKind: kind,
+            withIdentifier: IconSectionHeader.identifier,
+            for: indexPath
+        )
+        if let header = header as? IconSectionHeader, indexPath.section < iconSections.count {
+            header.configure(title: iconSections[indexPath.section].title)
+        }
+        return header
+    }
+}
+
+// MARK: - Icon view delegate
+
+extension BrowserPaneViewController: NSCollectionViewDelegate, NSCollectionViewDelegateFlowLayout {
+    public func collectionView(_ collectionView: NSCollectionView, didSelectItemsAt indexPaths: Set<IndexPath>) {
+        guard !isRestoringSelection else { return }
+        selectedURLCache = Set(selectedItems.map(\.url))
+        updateStatus()
+        activate()
+    }
+
+    public func collectionView(_ collectionView: NSCollectionView, didDeselectItemsAt indexPaths: Set<IndexPath>) {
+        guard !isRestoringSelection else { return }
+        selectedURLCache = Set(selectedItems.map(\.url))
+        updateStatus()
+    }
+
+    public func collectionView(
+        _ collectionView: NSCollectionView,
+        layout collectionViewLayout: NSCollectionViewLayout,
+        referenceSizeForHeaderInSection section: Int
+    ) -> NSSize {
+        model.settings.group == .none ? .zero : NSSize(width: 0, height: 26)
+    }
+
+    public func collectionView(
+        _ collectionView: NSCollectionView,
+        pasteboardWriterForItemAt indexPath: IndexPath
+    ) -> NSPasteboardWriting? {
+        guard indexPath.section < iconSections.count,
+              indexPath.item < iconSections[indexPath.section].items.count else { return nil }
+        return iconSections[indexPath.section].items[indexPath.item].url as NSURL
+    }
+
+    public func collectionView(
+        _ collectionView: NSCollectionView,
+        validateDrop draggingInfo: NSDraggingInfo,
+        proposedIndexPath proposedDropIndexPath: AutoreleasingUnsafeMutablePointer<NSIndexPath>,
+        dropOperation proposedDropOperation: UnsafeMutablePointer<NSCollectionView.DropOperation>
+    ) -> NSDragOperation {
+        draggingInfo.draggingPasteboard.canReadObject(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) ? .copy : []
+    }
+
+    public func collectionView(
+        _ collectionView: NSCollectionView,
+        acceptDrop draggingInfo: NSDraggingInfo,
+        indexPath: IndexPath,
+        dropOperation: NSCollectionView.DropOperation
+    ) -> Bool {
+        guard let urls = draggingInfo.draggingPasteboard.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) as? [URL], !urls.isEmpty else {
+            return false
+        }
+        let kind: TransferKind = draggingInfo.draggingSourceOperationMask.contains(.move)
+            && NSEvent.modifierFlags.contains(.command) ? .move : .copy
+        transfer(sources: urls, to: model.directory, kind: kind)
+        return true
     }
 }
 

@@ -30,7 +30,8 @@ Early development. The local-file MVP is in progress:
 | Activity window (live progress, session log) | done |
 | Quick Look, Get Info, Open With | done |
 | Search in folder, ZIP archives | done |
-| Icon view, settings, shortcuts | planned (M3) |
+| Icon view | done |
+| Settings window, shortcut customization | planned (M3) |
 | Remote providers (SFTP, FTP, WebDAV, S3, cloud) | planned (post-MVP) |
 
 ## Requirements
@@ -107,6 +108,9 @@ Design notes:
   then written under a hidden staging name and renamed into place, so a
   cancelled or failed operation never leaves a partial file; metadata is
   copied with `copyfile(3)`.
+- The icon view is the same pane model in an `NSCollectionView`: selection,
+  search, grouping, drag & drop, Quick Look and every command work the same,
+  and list/icon mode is remembered per folder.
 - Search is a live, case-insensitive name filter on the current folder
   (`BrowserModel.searchQuery`); it does not walk into subfolders.
 - “Compress” builds a ZIP with the system `zip` tool, so there is no archive
