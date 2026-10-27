@@ -13,6 +13,7 @@ public final class SettingsWindowController: NSWindowController {
     public var onLimitsChanged: ((Int) -> Void)?
     public var onResetFolderViews: (() -> Void)?
     public var onEditShortcuts: (() -> Void)?
+    public var onThemeChanged: ((Theme) -> Void)?
 
     private let showHiddenButton = NSButton(
         checkboxWithTitle: "Show hidden files in all open folders",
@@ -24,13 +25,14 @@ public final class SettingsWindowController: NSWindowController {
         target: nil,
         action: nil
     )
+    private let themePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let limitLabel = NSTextField(labelWithString: "50")
     private let limitStepper = NSStepper()
     private let versionLabel = NSTextField(labelWithString: "")
 
     public init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 430),
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 510),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -49,7 +51,16 @@ public final class SettingsWindowController: NSWindowController {
         fatalError("init(coder:) is not supported")
     }
 
-    public func present(showHidden: Bool, foldersFirst: Bool, limit: Int, version: String) {
+    public func present(
+        showHidden: Bool,
+        foldersFirst: Bool,
+        limit: Int,
+        version: String,
+        theme: Theme = .system
+    ) {
+        if let index = themePopUp.itemArray.firstIndex(where: { $0.representedObject as? String == theme.id }) {
+            themePopUp.selectItem(at: index)
+        }
         showHiddenButton.state = showHidden ? .on : .off
         foldersFirstButton.state = foldersFirst ? .on : .off
         limitStepper.integerValue = limit
@@ -84,6 +95,35 @@ public final class SettingsWindowController: NSWindowController {
         )
         resetButton.bezelStyle = .inline
         resetButton.controlSize = .small
+
+        // Appearance
+        themePopUp.removeAllItems()
+        for theme in Theme.builtIn {
+            themePopUp.addItem(withTitle: theme.name)
+            themePopUp.lastItem?.representedObject = theme.id
+        }
+        themePopUp.target = self
+        themePopUp.action = #selector(themeChanged(_:))
+        themePopUp.widthAnchor.constraint(equalToConstant: 200).isActive = true
+
+        let themeRow = NSStackView(views: [
+            NSTextField(labelWithString: "Theme:"),
+            themePopUp
+        ])
+        themeRow.orientation = .horizontal
+        themeRow.spacing = 8
+
+        let appearanceHeader = header("Appearance")
+        let appearanceStack = NSStackView(views: [
+            themeRow,
+            secondaryLabel(
+                "Themes set the file list background, alternating rows and selection " +
+                "color; System follows the macOS light or dark appearance."
+            )
+        ])
+        appearanceStack.orientation = .vertical
+        appearanceStack.alignment = .leading
+        appearanceStack.spacing = 8
 
         let generalHeader = header("General")
         let generalStack = NSStackView(views: [
@@ -137,6 +177,9 @@ public final class SettingsWindowController: NSWindowController {
         )
 
         let root = NSStackView(views: [
+            appearanceHeader,
+            appearanceStack,
+            separator(),
             generalHeader,
             generalStack,
             separator(),
@@ -184,6 +227,12 @@ public final class SettingsWindowController: NSWindowController {
     }
 
     // MARK: - Actions
+
+    @objc private func themeChanged(_ sender: NSPopUpButton) {
+        guard let id = sender.selectedItem?.representedObject as? String,
+              let theme = Theme.theme(withID: id) else { return }
+        onThemeChanged?(theme)
+    }
 
     @objc private func showHiddenChanged(_ sender: NSButton) {
         onShowHiddenChanged?(sender.state == .on)

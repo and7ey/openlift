@@ -21,6 +21,7 @@ public final class BrowserTabsViewController: NSViewController {
     /// Last real folder shown in this container; new tabs use it while a
     /// search-results tab is active.
     private var lastBrowserDirectory = URL(fileURLWithPath: NSHomeDirectory())
+    private var currentTheme = Theme.system
 
     public init(
         provider: FileProvider,
@@ -177,8 +178,14 @@ public final class BrowserTabsViewController: NSViewController {
         showActivePane()
     }
 
+    public func applyTheme(_ theme: Theme) {
+        currentTheme = theme
+        panes.forEach { $0.applyTheme(theme) }
+    }
+
     private func makePane(model: BrowserModel) -> BrowserPaneViewController {
         let pane = BrowserPaneViewController(model: model)
+        pane.applyTheme(currentTheme)
         pane.onActivate = { [weak self] in self?.onActivate?() }
         pane.onOperation = { [weak self] record in self?.onOperation?(record) }
         pane.onOpenSearchResultFolder = { [weak self] url in self?.newTab(at: url) }

@@ -35,6 +35,7 @@ Early development. The local-file MVP is in progress:
 | Folder compare and copy sync | done (copy-only) |
 | Archive browsing (zip/tar, extract) | done |
 | Git: status badges, branch/ahead-behind, stage/unstage, discard, commit | done |
+| Themes: System, Graphite, Nord, Solarized light/dark | done |
 | Search: in-folder filter + advanced window (recursive, content, preview) | done |
 | ZIP archives | done |
 | Icon view | done |
@@ -90,7 +91,7 @@ Release builds compile the bridge out.
 The runner covers ordering/grouping, favorites persistence, per-folder view
 settings, tab-aware window state, the local provider (listing, hidden files,
 move, create, delete), file transfers, undo records, the activity log, search,
-archives, advanced search, batch rename, archive browsing, Git status/actions, cloud drives, folder compare/sync, remote listings/bookmarks, WebDAV listings, app settings and shortcuts — 225 checks, all
+archives, advanced search, batch rename, archive browsing, Git status/actions, themes, cloud drives, folder compare/sync, remote listings/bookmarks, WebDAV listings, app settings and shortcuts — 237 checks, all
 dependency-free. When Xcode is
 available, `Tests/OpenLiftTests/OpenLiftTests.swift` can be re-enabled as a
 `swift-testing` target in `Package.swift`.
@@ -116,7 +117,7 @@ Sources/
     Browser/          BrowserModel — listing, history, sorting, grouping, FSEvents
     Model/            FileItem, SortDescriptor, ViewSettings, Favorite
     Persistence/      FavoritesStore, WindowStateStore, ViewSettingsStore,
-                      CloudDriveLocator
+                      ThemeStore, CloudDriveLocator
     Operations/       TransferPlanner, TransferExecutor, SearchEngine,
                       FolderComparator, FolderSync, progress
     Git/              GitClient — porcelain status parser and stage/commit actions
@@ -133,6 +134,7 @@ Sources/
     Info/             InfoWindowController — Get Info panel
     Preview/          QuickLookController, OpenWithMenu
     Compare/          FolderCompareWindowController — diff table + copy sync
+    Theme/            ThemeColors — AppKit colors for the built-in themes
     Sidebar/          SidebarViewController (favorites, volumes, cloud drives)
   OpenLiftApp/        application shell
     MainWindowController  window, split view, command routing, toolbar
@@ -186,6 +188,11 @@ Design notes:
   Discard and Commit act on the selection; commit opens a sheet with the staged
   count and an option to stage everything first. Discarding restores tracked
   files and deletes untracked ones after a confirmation, and is not undoable.
+- Themes recolor the list canvas only: appearance (or “follow the system”),
+  row background, alternating tint and a rounded selection fill. View ▸ Theme
+  and Settings ▸ Appearance switch them live; only the identifier is stored,
+  so an unknown theme falls back to System. Sidebar, toolbar and sheets follow
+  the theme's light/dark appearance through AppKit.
 - Cloud Drives in the sidebar are the folders kept in sync by the vendors'
   desktop clients (iCloud Drive, Dropbox, Google Drive, OneDrive, Box); they
   open as normal local folders, so sign-in and conflict handling stay with the

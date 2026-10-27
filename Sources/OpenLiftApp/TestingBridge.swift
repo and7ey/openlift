@@ -78,6 +78,10 @@ final class TestingBridge: NSObject {
             guard let path = info["path"] as? String else { return }
             controller.testNavigate(to: URL(fileURLWithPath: path, isDirectory: true))
 
+        case "theme":
+            guard let id = info["id"] as? String else { return }
+            controller.testSetTheme(id)
+
         case "newTab":
             guard let path = info["path"] as? String else { return }
             controller.testNewTab(at: URL(fileURLWithPath: path, isDirectory: true))

@@ -49,6 +49,8 @@ public final class BrowserPaneViewController: NSViewController {
     private var gitSnapshot: GitSnapshot?
     private var gitRefreshToken = UUID()
     private var gitDirectory: URL?
+    /// Color scheme for the list canvas; system by default.
+    public private(set) var theme = Theme.system
     private var remoteTransfer: RemoteFileTransferring? {
         model.fileProvider as? RemoteFileTransferring
     }
@@ -466,6 +468,22 @@ public final class BrowserPaneViewController: NSViewController {
         updateProgress()
         syncSortDescriptors()
         refreshGitStatus()
+    }
+
+    // MARK: - Appearance
+
+    /// Applies the theme's row colors. Window appearance is set once by the
+    /// window controller, so every pane and sheet follows it together.
+    public func applyTheme(_ theme: Theme) {
+        self.theme = theme
+        let background = theme.backgroundColor ?? .controlBackgroundColor
+        tableView.backgroundColor = background
+        scrollView.backgroundColor = background
+        tableView.usesAlternatingRowBackgroundColors = theme.alternateBackground == nil
+        iconScrollView.backgroundColor = background
+        collectionView.backgroundColors = [background]
+        tableView.reloadData()
+        collectionView.reloadData()
     }
 
     // MARK: - Git
@@ -1807,6 +1825,36 @@ public final class BrowserPaneViewController: NSViewController {
     }
 }
 
+/// Draws theme rows: background, alternating tint and a rounded selection
+/// fill. Falls back to AppKit drawing when a theme leaves a color unspecified.
+private final class ThemedRowView: NSTableRowView {
+    var theme = Theme.system {
+        didSet { needsDisplay = true }
+    }
+    var isAlternateRow = false {
+        didSet { needsDisplay = true }
+    }
+
+    override func drawBackground(in dirtyRect: NSRect) {
+        guard let background = theme.backgroundColor else {
+            super.drawBackground(in: dirtyRect)
+            return
+        }
+        let color = (isAlternateRow ? theme.alternateBackgroundColor : nil) ?? background
+        color.setFill()
+        dirtyRect.fill()
+    }
+
+    override func drawSelection(in dirtyRect: NSRect) {
+        guard let selection = theme.selectionColor else {
+            super.drawSelection(in: dirtyRect)
+            return
+        }
+        selection.withAlphaComponent(isEmphasized ? 1 : 0.65).setFill()
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 5, yRadius: 5).fill()
+    }
+}
+
 /// A table that makes its pane active on every click, including clicks on an
 /// already selected row. Without this, clicking a row in a pane that is not
 /// active leaves commands (copy, trash, paste) pointed at the other pane.
@@ -2080,6 +2128,13 @@ extension BrowserPaneViewController: NSCollectionViewDelegate, NSCollectionViewD
 extension BrowserPaneViewController: NSTableViewDataSource, NSTableViewDelegate {
     public func numberOfRows(in tableView: NSTableView) -> Int {
         rows.count
+    }
+
+    public func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        let rowView = ThemedRowView()
+        rowView.theme = theme
+        rowView.isAlternateRow = row % 2 == 1
+        return rowView
     }
 
     public func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {

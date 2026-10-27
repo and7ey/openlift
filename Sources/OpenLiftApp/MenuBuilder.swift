@@ -138,6 +138,16 @@ public enum MenuBuilder {
         groupItem.submenu = groupMenu
         menu.addItem(groupItem)
 
+        let themeItem = NSMenuItem(title: "Theme", action: nil, keyEquivalent: "")
+        let themeMenu = NSMenu(title: "Theme")
+        for theme in Theme.builtIn {
+            themeMenu.addItem(
+                makeItem(theme.name, #selector(MainWindowController.setTheme(_:)), "", [], target, represented: theme.id)
+            )
+        }
+        themeItem.submenu = themeMenu
+        menu.addItem(themeItem)
+
         menu.addItem(.separator())
         menu.addItem(makeItem("Show Hidden Files", #selector(MainWindowController.toggleHiddenFiles(_:)), ".", [.command, .shift], target))
         menu.addItem(makeItem("Refresh", #selector(MainWindowController.refresh(_:)), "r", [.command], target))

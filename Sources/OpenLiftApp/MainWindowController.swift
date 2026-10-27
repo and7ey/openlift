@@ -24,6 +24,8 @@ public final class MainWindowController: NSWindowController {
     private var remoteConnectionController: RemoteConnectionWindowController?
     private var folderCompareController: FolderCompareWindowController?
     private let bookmarkStore = RemoteBookmarkStore()
+    private let themeStore = ThemeStore.shared
+    private var currentTheme = Theme.system
     private let shortcuts = ShortcutStore()
 
     private var isSinglePane = false
@@ -84,6 +86,7 @@ public final class MainWindowController: NSWindowController {
         configureSidebar()
         configureToolbar()
         observeModels()
+        applyTheme(themeStore.current, persist: false)
         updateWindowTitle()
         TestWindowPlacement.placeMainWindow(window)
 
@@ -230,6 +233,25 @@ public final class MainWindowController: NSWindowController {
         updateWindowTitle()
     }
 
+    // MARK: - Themes
+
+    private func applyTheme(_ theme: Theme, persist: Bool = true) {
+        currentTheme = theme
+        NSApp.appearance = theme.appearance.nsAppearance
+        leftTabs.applyTheme(theme)
+        rightTabs.applyTheme(theme)
+        if persist {
+            themeStore.select(theme)
+        }
+    }
+
+    @objc func setTheme(_ sender: Any?) {
+        guard let item = sender as? NSMenuItem,
+              let id = item.representedObject as? String,
+              let theme = Theme.theme(withID: id) else { return }
+        applyTheme(theme)
+    }
+
     // MARK: - Shortcuts
 
     /// Selector behind each customizable command.
@@ -335,6 +357,9 @@ public final class MainWindowController: NSWindowController {
             controller.onEditShortcuts = { [weak self] in
                 self?.showShortcuts(nil)
             }
+            controller.onThemeChanged = { [weak self] theme in
+                self?.applyTheme(theme)
+            }
             settingsWindowController = controller
         }
 
@@ -344,7 +369,8 @@ public final class MainWindowController: NSWindowController {
             showHidden: activePane.model.settings.showHidden,
             foldersFirst: activePane.model.settings.sort.foldersFirst,
             limit: min(appSettings.undoLimit, appSettings.activityLimit),
-            version: version
+            version: version,
+            theme: currentTheme
         )
     }
 
@@ -704,6 +730,11 @@ public final class MainWindowController: NSWindowController {
 
     func testNavigate(to url: URL) {
         activePane.model.navigate(to: url)
+    }
+
+    func testSetTheme(_ id: String) {
+        guard let theme = Theme.theme(withID: id) else { return }
+        applyTheme(theme)
     }
 
     func testNewTab(at url: URL) {
@@ -1104,6 +1135,11 @@ extension MainWindowController: NSMenuItemValidation {
                 && !activePane.repositoryRelativePaths(for: activePane.selectedItems).isEmpty
         case #selector(commitGitChanges(_:)):
             return activePane.currentGitSnapshot != nil
+        case #selector(setTheme(_:)):
+            if let id = menuItem.representedObject as? String {
+                menuItem.state = currentTheme.id == id ? .on : .off
+            }
+            return true
         case #selector(refreshGitStatus(_:)):
             return activePane.model.directory.isFileURL
                 && !activePane.model.isRemote

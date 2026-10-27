@@ -77,7 +77,7 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned
 - [x] Archive browsing (zip/tar read-only tabs, extract)
 - [x] Git status and actions (badges, stage/unstage, discard, commit)
 - [x] Batch rename (template tokens, find/replace, numbering, preview)
-- [ ] Themes
+- [x] Themes (System, Graphite, Nord, Solarized light/dark)
 
 ## Engineering notes
 

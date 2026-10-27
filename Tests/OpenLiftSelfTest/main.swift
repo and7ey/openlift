@@ -847,6 +847,38 @@ do {
     print("FAIL archive browsing: \(error)")
 }
 
+// MARK: - Themes
+
+do {
+    check(Set(Theme.builtIn.map(\.id)).count == Theme.builtIn.count, "theme identifiers are unique")
+    check(Theme.theme(withID: "nord")?.name == "Nord", "theme lookup resolves built-ins")
+    check(Theme.theme(withID: "does-not-exist") == nil, "unknown theme identifiers do not resolve")
+    check(Theme.system.background == nil && Theme.system.selection == nil, "system theme leaves colors to AppKit")
+    check(Theme.nord.appearance == .dark, "nord is a dark theme")
+    check(Theme.solarizedLight.appearance == .light, "solarized light is a light theme")
+    check(Theme.graphite.background != nil && Theme.graphite.selection != nil, "graphite defines row colors")
+
+    let suite = "dev.openlift.selftest.theme-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defaults.removePersistentDomain(forName: suite)
+
+    let store = ThemeStore(defaults: defaults, storageKey: "theme")
+    check(store.current.id == Theme.system.id, "theme store defaults to system")
+    store.select(Theme.nord)
+    check(store.current.id == Theme.nord.id, "theme store updates the current theme")
+
+    let reloaded = ThemeStore(defaults: defaults, storageKey: "theme")
+    check(reloaded.current.id == Theme.nord.id, "theme store persists the selection")
+
+    defaults.set("missing-theme", forKey: "theme")
+    let unknown = ThemeStore(defaults: defaults, storageKey: "theme")
+    check(unknown.current.id == Theme.system.id, "unknown stored theme falls back to system")
+
+    unknown.select(Theme.graphite)
+    check(defaults.string(forKey: "theme") == Theme.graphite.id, "theme selection is written back")
+    defaults.removePersistentDomain(forName: suite)
+}
+
 // MARK: - Git integration
 
 do {
