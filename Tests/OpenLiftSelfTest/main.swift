@@ -847,6 +847,100 @@ do {
     print("FAIL archive browsing: \(error)")
 }
 
+// MARK: - Git integration
+
+do {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    func git(_ arguments: [String]) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", root.path] + arguments
+        let errors = Pipe()
+        process.standardError = errors
+        process.standardOutput = Pipe()
+        try process.run()
+        process.waitUntilExit()
+        if process.terminationStatus != 0 {
+            let message = String(
+                decoding: errors.fileHandleForReading.readDataToEndOfFile(),
+                as: UTF8.self
+            )
+            throw NSError(domain: "git", code: Int(process.terminationStatus), userInfo: [
+                NSLocalizedDescriptionKey: message
+            ])
+        }
+    }
+
+    try git(["init", "-q"])
+    try git(["config", "user.email", "selftest@example.com"])
+    try git(["config", "user.name", "Self Test"])
+
+    let file = root.appendingPathComponent("tracked.txt")
+    try Data("one".utf8).write(to: file)
+    try Data("loose".utf8).write(to: root.appendingPathComponent("untracked.txt"))
+
+    let detected = await GitClient.repositoryRoot(containing: root)
+    check(detected?.standardizedFileURL.path == root.standardizedFileURL.path, "git locates the repository root")
+    let outside = await GitClient.repositoryRoot(containing: FileManager.default.temporaryDirectory)
+    check(outside == nil, "git reports non-repositories as nil")
+
+    let initial = try await GitClient.snapshot(at: root)
+    check(initial.isDirty, "snapshot reports untracked files")
+    check(initial.entriesByPath["untracked.txt"]?.isUntracked == true, "untracked file is flagged")
+    check(initial.branch == "main" || initial.branch == "master", "snapshot reads the branch name")
+    check(initial.relativePath(of: file) == "tracked.txt", "snapshot maps paths inside the repository")
+    check(initial.relativePath(of: URL(fileURLWithPath: "/tmp/elsewhere.txt")) == nil, "snapshot rejects paths outside the repository")
+
+    try await GitClient.stage(["tracked.txt", "untracked.txt"], at: root)
+    let staged = try await GitClient.snapshot(at: root)
+    check(staged.entriesByPath["tracked.txt"]?.hasStagedChanges == true, "staging marks a file as staged")
+    check(staged.entriesByPath["tracked.txt"]?.badgeLetter == "A", "staged file gets an added badge")
+
+    try await GitClient.unstage(["tracked.txt"], at: root)
+    let unstaged = try await GitClient.snapshot(at: root)
+    check(unstaged.entriesByPath["tracked.txt"]?.hasStagedChanges == false, "unstaging clears the staged flag")
+
+    try await GitClient.stageAll(at: root)
+    let hash = try await GitClient.commit(message: "Initial commit", at: root)
+    check(!hash.isEmpty, "commit returns a short hash")
+    let clean = try await GitClient.snapshot(at: root)
+    check(!clean.isDirty, "commit leaves a clean tree")
+    check(clean.summaryText.contains("clean"), "clean summary mentions clean")
+
+    let log = try await GitClient.recentCommits(at: root)
+    check(log.first?.subject == "Initial commit", "recent commits are parsed")
+
+    try Data("two".utf8).write(to: file)
+    let modified = try await GitClient.snapshot(at: root)
+    check(modified.entriesByPath["tracked.txt"]?.hasUnstagedChanges == true, "modification appears as unstaged")
+    check(modified.entriesByPath["tracked.txt"]?.badgeLetter == "M", "modified file gets a modified badge")
+    check(modified.entriesByPath["tracked.txt"]?.summary.contains("Modified") == true, "status summary describes the change")
+
+    try await GitClient.discardChanges(["tracked.txt"], at: root)
+    check((try? String(contentsOf: file, encoding: .utf8)) == "one", "discard restores tracked content")
+
+    try git(["mv", "tracked.txt", "renamed.txt"])
+    let renamed = try await GitClient.snapshot(at: root)
+    check(renamed.entriesByPath["renamed.txt"]?.originalPath == "tracked.txt", "rename records the original path")
+    check(renamed.entriesByPath["renamed.txt"]?.badgeLetter == "R", "renamed file gets a renamed badge")
+
+    try await GitClient.stageAll(at: root)
+    try await GitClient.commit(message: "Rename", at: root)
+    try git(["checkout", "-q", "-b", "feature"])
+    let feature = try await GitClient.snapshot(at: root)
+    check(feature.branch == "feature", "branch switch is reflected")
+
+    let parsed = GitClient.parseStatus("R  renamed.txt\0tracked.txt\0 M other.txt\0?? new.txt\0")
+    check(parsed.count == 3, "porcelain parser splits records")
+    check(parsed.first(where: { $0.path == "renamed.txt" })?.originalPath == "tracked.txt", "porcelain parser reads rename sources")
+    check(parsed.first(where: { $0.path == "new.txt" })?.isUntracked == true, "porcelain parser flags untracked files")
+} catch {
+    failures += 1
+    print("FAIL git integration: \(error)")
+}
+
 // MARK: - Undo records
 
 do {

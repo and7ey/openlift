@@ -45,6 +45,10 @@ public final class BrowserPaneViewController: NSViewController {
 
     private var batchRenameController: BatchRenameWindowController?
     private var iconCache: [String: NSImage] = [:]
+    /// Repository status for the current folder, refreshed off the main thread.
+    private var gitSnapshot: GitSnapshot?
+    private var gitRefreshToken = UUID()
+    private var gitDirectory: URL?
     private var remoteTransfer: RemoteFileTransferring? {
         model.fileProvider as? RemoteFileTransferring
     }
@@ -454,9 +458,72 @@ public final class BrowserPaneViewController: NSViewController {
         }
         isRestoringSelection = false
 
+        if gitDirectory != model.directory {
+            gitDirectory = model.directory
+            gitSnapshot = nil
+        }
         updateStatus()
         updateProgress()
         syncSortDescriptors()
+        refreshGitStatus()
+    }
+
+    // MARK: - Git
+
+    public var currentGitSnapshot: GitSnapshot? { gitSnapshot }
+
+    /// Repository-relative paths for the selected items, used by Git commands.
+    public func repositoryRelativePaths(for items: [FileItem]) -> [String] {
+        guard let snapshot = gitSnapshot else { return [] }
+        return items.compactMap { snapshot.relativePath(of: $0.url) }.filter { !$0.isEmpty }
+    }
+
+    public func gitStatus(for item: FileItem) -> GitStatusEntry? {
+        guard let snapshot = gitSnapshot,
+              let path = snapshot.relativePath(of: item.url) else { return nil }
+        return snapshot.status(forPath: path)
+    }
+
+    /// Re-reads `git status` for the current folder. Safe to call after any
+    /// change; stale results are dropped by the token check.
+    public func refreshGitStatus() {
+        guard model.directory.isFileURL,
+              !model.isRemote,
+              !model.isArchive,
+              !model.isSearchResults else {
+            if gitSnapshot != nil {
+                gitSnapshot = nil
+                tableView.reloadData()
+                collectionView.reloadData()
+                updateStatus()
+            }
+            return
+        }
+        let directory = model.directory
+        let token = UUID()
+        gitRefreshToken = token
+        Task { [weak self] in
+            let root = await GitClient.repositoryRoot(containing: directory)
+            var snapshot: GitSnapshot?
+            if let root {
+                snapshot = try? await GitClient.snapshot(at: root)
+            }
+            guard let self, self.gitRefreshToken == token else { return }
+            self.gitSnapshot = snapshot
+            self.tableView.reloadData()
+            if self.model.settings.mode == .icon {
+                self.collectionView.reloadData()
+            }
+            self.updateStatus()
+        }
+    }
+
+    private func gitBadgeColor(for entry: GitStatusEntry) -> NSColor {
+        if entry.isAggregate { return .tertiaryLabelColor }
+        if entry.isConflicted { return .systemRed }
+        if entry.isUntracked { return .systemGreen }
+        if entry.hasUnstagedChanges { return .systemOrange }
+        return .systemBlue
     }
 
     /// Sections shown by the icon view: grouping applies there too.
@@ -490,6 +557,9 @@ public final class BrowserPaneViewController: NSViewController {
         }
         if selected > 0 {
             text += ", \(Self.number(selected)) selected"
+        }
+        if let gitSnapshot, !resultsMode {
+            text = "\(gitSnapshot.summaryText) — " + text
         }
         if let free = availableCapacity() {
             text += " — \(Formatting.size(free)) available"
@@ -1792,6 +1862,7 @@ private final class IconItemView: NSCollectionViewItem {
 
     private let iconView = NSImageView()
     private let nameLabel = NSTextField(labelWithString: "")
+    private let badgeView = NSView()
 
     override func loadView() {
         let container = NSView()
@@ -1808,8 +1879,14 @@ private final class IconItemView: NSCollectionViewItem {
         nameLabel.cell?.isScrollable = false
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
 
+        badgeView.wantsLayer = true
+        badgeView.layer?.cornerRadius = 5
+        badgeView.isHidden = true
+        badgeView.translatesAutoresizingMaskIntoConstraints = false
+
         container.addSubview(iconView)
         container.addSubview(nameLabel)
+        container.addSubview(badgeView)
         NSLayoutConstraint.activate([
             iconView.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
             iconView.centerXAnchor.constraint(equalTo: container.centerXAnchor),
@@ -1818,15 +1895,22 @@ private final class IconItemView: NSCollectionViewItem {
 
             nameLabel.topAnchor.constraint(equalTo: iconView.bottomAnchor, constant: 4),
             nameLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 2),
-            nameLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -2)
+            nameLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -2),
+
+            badgeView.widthAnchor.constraint(equalToConstant: 10),
+            badgeView.heightAnchor.constraint(equalToConstant: 10),
+            badgeView.trailingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: -2),
+            badgeView.topAnchor.constraint(equalTo: iconView.topAnchor, constant: 2)
         ])
         view = container
     }
 
-    func configure(name: String, image: NSImage) {
+    func configure(name: String, image: NSImage, badgeColor: NSColor? = nil, badgeTip: String? = nil) {
         nameLabel.stringValue = name
         iconView.image = image
-        view.toolTip = name
+        badgeView.layer?.backgroundColor = badgeColor?.cgColor
+        badgeView.isHidden = badgeColor == nil
+        view.toolTip = badgeTip.map { "\(name) — \($0)" } ?? name
     }
 
     override var isSelected: Bool {
@@ -1898,7 +1982,13 @@ extension BrowserPaneViewController: NSCollectionViewDataSource {
             return item
         }
         let file = iconSections[indexPath.section].items[indexPath.item]
-        tile.configure(name: file.name, image: icon(for: file))
+        let status = gitStatus(for: file)
+        tile.configure(
+            name: file.name,
+            image: icon(for: file),
+            badgeColor: status.map(gitBadgeColor(for:)),
+            badgeTip: status?.summary
+        )
         return tile
     }
 
@@ -2017,10 +2107,32 @@ extension BrowserPaneViewController: NSTableViewDataSource, NSTableViewDelegate 
 
             switch identifier.rawValue {
             case "name":
-                textField.stringValue = item.name
-                textField.font = .systemFont(ofSize: NSFont.systemFontSize)
+                let nameFont = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+                let nameColor: NSColor = item.isHidden ? .secondaryLabelColor : .labelColor
+                textField.font = nameFont
+                textField.textColor = nameColor
                 cell.imageView?.image = icon(for: item)
-                textField.textColor = item.isHidden ? .secondaryLabelColor : .labelColor
+                if let status = gitStatus(for: item), let badge = status.badgeLetter {
+                    let text = NSMutableAttributedString(
+                        string: item.name,
+                        attributes: [.font: nameFont, .foregroundColor: nameColor]
+                    )
+                    text.append(NSAttributedString(
+                        string: "  \(badge)",
+                        attributes: [
+                            .font: NSFont.monospacedSystemFont(
+                                ofSize: NSFont.smallSystemFontSize,
+                                weight: .bold
+                            ),
+                            .foregroundColor: gitBadgeColor(for: status)
+                        ]
+                    ))
+                    textField.attributedStringValue = text
+                    cell.toolTip = "\(item.name) — \(status.summary)"
+                } else {
+                    textField.stringValue = item.name
+                    cell.toolTip = nil
+                }
             case "path":
                 textField.stringValue = item.url.path
                 textField.font = .systemFont(ofSize: NSFont.smallSystemFontSize)

@@ -34,6 +34,7 @@ Early development. The local-file MVP is in progress:
 | Cloud Drives: iCloud, Dropbox, Google Drive, OneDrive, Box folders | done via desktop clients |
 | Folder compare and copy sync | done (copy-only) |
 | Archive browsing (zip/tar, extract) | done |
+| Git: status badges, branch/ahead-behind, stage/unstage, discard, commit | done |
 | Search: in-folder filter + advanced window (recursive, content, preview) | done |
 | ZIP archives | done |
 | Icon view | done |
@@ -89,7 +90,7 @@ Release builds compile the bridge out.
 The runner covers ordering/grouping, favorites persistence, per-folder view
 settings, tab-aware window state, the local provider (listing, hidden files,
 move, create, delete), file transfers, undo records, the activity log, search,
-archives, advanced search, batch rename, archive browsing, cloud drives, folder compare/sync, remote listings/bookmarks, WebDAV listings, app settings and shortcuts — 201 checks, all
+archives, advanced search, batch rename, archive browsing, Git status/actions, cloud drives, folder compare/sync, remote listings/bookmarks, WebDAV listings, app settings and shortcuts — 225 checks, all
 dependency-free. When Xcode is
 available, `Tests/OpenLiftTests/OpenLiftTests.swift` can be re-enabled as a
 `swift-testing` target in `Package.swift`.
@@ -118,6 +119,7 @@ Sources/
                       CloudDriveLocator
     Operations/       TransferPlanner, TransferExecutor, SearchEngine,
                       FolderComparator, FolderSync, progress
+    Git/              GitClient — porcelain status parser and stage/commit actions
     Provider/         FileProvider protocol, LocalFileProvider, SearchResultsProvider,
                       SFTPRemoteProvider, FTPRemoteProvider, WebDAVRemoteProvider,
                       ArchiveFileProvider, RemoteBookmark, DirectoryWatcher
@@ -176,6 +178,14 @@ Design notes:
   files are extracted through the same tools. Double-clicking a zip/tar file
   opens it as a tab; Quick Look and open extract to a cache first, and
   “Extract to Other Pane” copies files or whole folders out.
+- Git support watches the folder's repository (found with
+  `git rev-parse --show-toplevel`) and off the main thread parses
+  `git status --porcelain -z`. Changed names get a colored letter (`M`, `A`,
+  `D`, `R`, `?`, `!`) and the folder rolls up a dot; the status bar shows the
+  branch, ahead/behind counts and the number of changes. Git ▸ Stage, Unstage,
+  Discard and Commit act on the selection; commit opens a sheet with the staged
+  count and an option to stage everything first. Discarding restores tracked
+  files and deletes untracked ones after a confirmation, and is not undoable.
 - Cloud Drives in the sidebar are the folders kept in sync by the vendors'
   desktop clients (iCloud Drive, Dropbox, Google Drive, OneDrive, Box); they
   open as normal local folders, so sign-in and conflict handling stay with the
@@ -249,6 +259,9 @@ See [`docs/spec/mvp.md`](docs/spec/mvp.md) for the full MVP specification and
 | Upload to Other Pane | ⌥⌘U |
 | Compare Folders | ⇧⌘C |
 | Open Archive | ⌥⌘O |
+| Git Commit | ⌥⌘K |
+| Git Stage Selection | ⌥⌘S |
+| Git Unstage Selection | ⇧⌥⌘S |
 | Extract to Other Pane | ⌥⌘E |
 | Settings | ⌘, |
 | Show Hidden Files | ⇧⌘. |

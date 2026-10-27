@@ -16,6 +16,7 @@ public enum MenuBuilder {
         mainMenu.addItem(editMenuItem(target: target))
         mainMenu.addItem(viewMenuItem(target: target))
         mainMenu.addItem(goMenuItem(target: target))
+        mainMenu.addItem(gitMenuItem(target: target))
         mainMenu.addItem(windowMenuItem(target: target))
         mainMenu.addItem(helpMenuItem())
 
@@ -169,6 +170,23 @@ public enum MenuBuilder {
         serversMenu.delegate = target as? NSMenuDelegate
         serversItem.submenu = serversMenu
         menu.addItem(serversItem)
+        item.submenu = menu
+        return item
+    }
+
+    private static func gitMenuItem(target: AnyObject) -> NSMenuItem {
+        let item = NSMenuItem()
+        let menu = NSMenu(title: "Git")
+
+        menu.addItem(makeItem("Commit…", #selector(MainWindowController.commitGitChanges(_:)), "k", [.command, .option], target))
+        menu.addItem(.separator())
+        menu.addItem(makeItem("Stage Selection", #selector(MainWindowController.stageGitSelection(_:)), "s", [.command, .option], target))
+        let unstage = makeItem("Unstage Selection", #selector(MainWindowController.unstageGitSelection(_:)), "s", [.command, .option, .shift], target)
+        menu.addItem(unstage)
+        menu.addItem(makeItem("Discard Changes…", #selector(MainWindowController.discardGitChanges(_:)), "", [], target))
+        menu.addItem(.separator())
+        menu.addItem(makeItem("Refresh Status", #selector(MainWindowController.refreshGitStatus(_:)), "", [], target))
+
         item.submenu = menu
         return item
     }

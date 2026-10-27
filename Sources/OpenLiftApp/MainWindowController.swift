@@ -480,6 +480,142 @@ public final class MainWindowController: NSWindowController {
         activePane.extractSelection(to: otherPane.model.directory)
     }
 
+    // MARK: - Git
+
+    @objc func refreshGitStatus(_ sender: Any?) {
+        activePane.refreshGitStatus()
+    }
+
+    @objc func stageGitSelection(_ sender: Any?) {
+        guard let snapshot = activePane.currentGitSnapshot else { NSSound.beep(); return }
+        let paths = activePane.repositoryRelativePaths(for: activePane.selectedItems)
+        guard !paths.isEmpty else { NSSound.beep(); return }
+        let items = activePane.selectedItems
+        runGitAction(
+            title: items.count == 1 ? "Stage “\(items[0].name)”" : "Stage \(items.count) items",
+            detail: snapshot.root.path
+        ) {
+            try await GitClient.stage(paths, at: snapshot.root)
+        }
+    }
+
+    @objc func unstageGitSelection(_ sender: Any?) {
+        guard let snapshot = activePane.currentGitSnapshot else { NSSound.beep(); return }
+        let paths = activePane.repositoryRelativePaths(for: activePane.selectedItems)
+        guard !paths.isEmpty else { NSSound.beep(); return }
+        let items = activePane.selectedItems
+        runGitAction(
+            title: items.count == 1 ? "Unstage “\(items[0].name)”" : "Unstage \(items.count) items",
+            detail: snapshot.root.path
+        ) {
+            try await GitClient.unstage(paths, at: snapshot.root)
+        }
+    }
+
+    @objc func discardGitChanges(_ sender: Any?) {
+        guard let snapshot = activePane.currentGitSnapshot else { NSSound.beep(); return }
+        let paths = activePane.repositoryRelativePaths(for: activePane.selectedItems)
+        guard !paths.isEmpty else { NSSound.beep(); return }
+
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = paths.count == 1
+            ? "Discard changes in “\(paths[0])”?"
+            : "Discard changes in \(paths.count) items?"
+        alert.informativeText = "Tracked files are restored to the last commit and untracked files are deleted. This cannot be undone."
+        alert.addButton(withTitle: "Discard Changes")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons[0].hasDestructiveAction = true
+        guard let window else {
+            NSSound.beep()
+            return
+        }
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            self?.runGitAction(title: "Discard Changes", detail: snapshot.root.path) {
+                try await GitClient.discardChanges(paths, at: snapshot.root)
+            }
+        }
+    }
+
+    @objc func commitGitChanges(_ sender: Any?) {
+        guard let snapshot = activePane.currentGitSnapshot, let window else {
+            NSSound.beep()
+            return
+        }
+        let staged = snapshot.entries.filter(\.hasStagedChanges).count
+        let unstaged = snapshot.entries.count - staged
+
+        let field = NSTextField(frame: NSRect(x: 0, y: 28, width: 340, height: 24))
+        field.placeholderString = "Commit message"
+        let stageAll = NSButton(checkboxWithTitle: "Stage all changes first", target: nil, action: nil)
+        stageAll.frame = NSRect(x: 0, y: 0, width: 340, height: 20)
+        stageAll.state = staged == 0 ? .on : .off
+        let accessory = NSView(frame: NSRect(x: 0, y: 0, width: 340, height: 56))
+        accessory.addSubview(field)
+        accessory.addSubview(stageAll)
+
+        let alert = NSAlert()
+        alert.messageText = "Commit to \(snapshot.branch)"
+        alert.informativeText = staged == 0
+            ? "Nothing is staged. \(unstaged) changed file\(unstaged == 1 ? "" : "s") can be staged for this commit."
+            : "\(staged) staged, \(unstaged) not staged."
+        alert.accessoryView = accessory
+        alert.addButton(withTitle: "Commit")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            let message = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !message.isEmpty else {
+                NSSound.beep()
+                return
+            }
+            let shouldStageAll = stageAll.state == .on
+            self?.runGitAction(title: "Commit", detail: snapshot.root.path, refresh: true) {
+                if shouldStageAll {
+                    try await GitClient.stageAll(at: snapshot.root)
+                }
+                try await GitClient.commit(message: message, at: snapshot.root)
+            }
+        }
+    }
+
+    private func runGitAction(
+        title: String,
+        detail: String,
+        refresh: Bool = true,
+        work: @escaping () async throws -> Void
+    ) {
+        Task { [weak self] in
+            let id = ActivityLog.shared.begin(title: title, detail: detail)
+            do {
+                try await work()
+                ActivityLog.shared.finish(id, status: .completed)
+            } catch {
+                ActivityLog.shared.finish(id, status: .failed, message: error.localizedDescription)
+                self?.presentGitError(error)
+            }
+            if refresh {
+                self?.activePane.refreshGitStatus()
+            }
+        }
+    }
+
+    private func presentGitError(_ error: Error) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Git command failed"
+        alert.informativeText = error.localizedDescription
+        alert.addButton(withTitle: "OK")
+        if let window {
+            alert.beginSheetModal(for: window)
+        } else {
+            alert.runModal()
+        }
+    }
+
     // MARK: - Remote
 
     @objc func connectToServer(_ sender: Any?) {
@@ -961,6 +1097,18 @@ extension MainWindowController: NSMenuItemValidation {
                 && !otherPane.model.isArchive
                 && !otherPane.model.isSearchResults
                 && !activePane.selectedItems.isEmpty
+        case #selector(stageGitSelection(_:)),
+             #selector(unstageGitSelection(_:)),
+             #selector(discardGitChanges(_:)):
+            return activePane.currentGitSnapshot != nil
+                && !activePane.repositoryRelativePaths(for: activePane.selectedItems).isEmpty
+        case #selector(commitGitChanges(_:)):
+            return activePane.currentGitSnapshot != nil
+        case #selector(refreshGitStatus(_:)):
+            return activePane.model.directory.isFileURL
+                && !activePane.model.isRemote
+                && !activePane.model.isArchive
+                && !activePane.model.isSearchResults
         case #selector(uploadToOtherPane(_:)):
             return !activePane.model.isRemote
                 && otherPane.model.isRemote

@@ -40,7 +40,12 @@ final class TestingBridge: NSObject {
         "uploadToOtherPane:",
         "renameSelection:",
         "compareFolders:",
-        "extractToOtherPane:"
+        "extractToOtherPane:",
+        "refreshGitStatus:",
+        "stageGitSelection:",
+        "unstageGitSelection:",
+        "commitGitChanges:",
+        "discardGitChanges:"
     ]
 
     init(controller: MainWindowController) {

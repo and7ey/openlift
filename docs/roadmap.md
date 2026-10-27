@@ -75,7 +75,7 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned
   - [ ] Native OAuth providers for machines without the desktop clients
 - [x] Folder compare and copy sync (left↔right, no deletions)
 - [x] Archive browsing (zip/tar read-only tabs, extract)
-- [ ] Git status and actions
+- [x] Git status and actions (badges, stage/unstage, discard, commit)
 - [x] Batch rename (template tokens, find/replace, numbering, preview)
 - [ ] Themes
 
