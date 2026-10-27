@@ -902,7 +902,7 @@ public final class BrowserPaneViewController: NSViewController {
     }
 
     @objc func newFolderAction() {
-        guard !model.isSearchResults, !model.isRemote else {
+        guard !model.isSearchResults else {
             NSSound.beep()
             return
         }
@@ -918,17 +918,20 @@ public final class BrowserPaneViewController: NSViewController {
         let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
         let destination = model.directory.appendingPathComponent(name, isDirectory: true)
-        let provider = LocalFileProvider()
-        let activityID = ActivityLog.shared.begin(title: "New Folder", detail: destination.path)
+        let provider: FileProvider = model.isRemote ? model.fileProvider : LocalFileProvider()
+        let recordsUndo = !model.isRemote
+        let activityID = ActivityLog.shared.begin(title: "New Folder", detail: destination.absoluteString)
         Task {
             do {
                 try await provider.createDirectory(at: destination)
-                onOperation?(
-                    FileOperationRecord(
-                        kind: .createDirectory,
-                        pairs: [.init(source: destination, target: destination)]
+                if recordsUndo {
+                    onOperation?(
+                        FileOperationRecord(
+                            kind: .createDirectory,
+                            pairs: [.init(source: destination, target: destination)]
+                        )
                     )
-                )
+                }
                 ActivityLog.shared.finish(activityID, status: .completed)
                 model.reload()
             } catch {
@@ -939,7 +942,6 @@ public final class BrowserPaneViewController: NSViewController {
     }
 
     @objc func renameAction() {
-        guard !model.isRemote else { NSSound.beep(); return }
         guard let item = focusedItem else { return }
         let alert = NSAlert()
         alert.messageText = "Rename “\(item.name)”"
@@ -952,13 +954,16 @@ public final class BrowserPaneViewController: NSViewController {
         let newName = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !newName.isEmpty, newName != item.name else { return }
         let destination = item.url.deletingLastPathComponent().appendingPathComponent(newName)
-        let provider = LocalFileProvider()
+        let provider: FileProvider = model.isRemote ? model.fileProvider : LocalFileProvider()
         let record = FileOperationRecord(kind: .rename, pairs: [.init(source: item.url, target: destination)])
+        let recordsUndo = !model.isRemote
         let activityID = ActivityLog.shared.begin(title: record.title, detail: "to “\(newName)”")
         Task {
             do {
                 try await provider.move(item.url, to: destination)
-                onOperation?(record)
+                if recordsUndo {
+                    onOperation?(record)
+                }
                 ActivityLog.shared.finish(activityID, status: .completed)
                 model.reload()
             } catch {
@@ -1069,10 +1074,14 @@ public final class BrowserPaneViewController: NSViewController {
     }
 
     @objc func moveToTrashAction() {
-        guard !model.isRemote else { NSSound.beep(); return }
-        let provider = LocalFileProvider()
         let items = selectedItems
         guard !items.isEmpty else { return }
+
+        if model.isRemote {
+            deleteRemoteSelection(items)
+            return
+        }
+        let provider = LocalFileProvider()
 
         let title = FileOperationRecord(
             kind: .trash,
@@ -1105,6 +1114,132 @@ public final class BrowserPaneViewController: NSViewController {
             )
             model.reload()
         }
+    }
+
+    private func deleteRemoteSelection(_ items: [FileItem]) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = items.count == 1
+            ? "Delete “\(items[0].name)” permanently?"
+            : "Delete \(items.count) items permanently?"
+        alert.informativeText = "Remote items do not use the local Trash and cannot be restored."
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let provider = model.fileProvider
+        let title = items.count == 1 ? "Delete “\(items[0].name)”" : "Delete \(items.count) remote items"
+        let activityID = ActivityLog.shared.begin(title: title, detail: model.directory.absoluteString)
+
+        Task { [weak self] in
+            var failures: [String] = []
+            for item in items {
+                do {
+                    try await provider.delete(item.url)
+                } catch {
+                    failures.append("\(item.name): \(error.localizedDescription)")
+                }
+            }
+            ActivityLog.shared.finish(
+                activityID,
+                status: failures.isEmpty ? .completed : .failed,
+                message: failures.first
+            )
+            if let first = failures.first {
+                self?.presentMessage(
+                    title: failures.count == 1 ? "An item could not be deleted" : "\(failures.count) items could not be deleted",
+                    message: first
+                )
+            }
+            self?.model.reload()
+        }
+    }
+
+    /// Uploads local files/folders into `directory` on this remote pane.
+    public func uploadSelection(_ sources: [URL], to directory: URL? = nil) {
+        guard model.isRemote, let transfer = remoteTransfer else {
+            NSSound.beep()
+            return
+        }
+        let destination = directory ?? model.directory
+        guard !sources.isEmpty else { return }
+
+        let title = sources.count == 1
+            ? "Upload “\(sources[0].lastPathComponent)”"
+            : "Upload \(sources.count) items"
+        let activityID = ActivityLog.shared.begin(title: title, detail: destination.absoluteString)
+
+        Task { [weak self] in
+            guard let self else { return }
+            var failures: [String] = []
+            for source in sources {
+                do {
+                    let target = try await self.uniqueRemoteDestination(
+                        named: source.lastPathComponent,
+                        in: destination
+                    )
+                    try await self.uploadLocalItem(source, to: target, using: transfer)
+                } catch {
+                    failures.append("\(source.lastPathComponent): \(error.localizedDescription)")
+                }
+            }
+            ActivityLog.shared.finish(
+                activityID,
+                status: failures.isEmpty ? .completed : .failed,
+                message: failures.first
+            )
+            if let first = failures.first {
+                self.presentMessage(
+                    title: failures.count == 1 ? "An item could not be uploaded" : "\(failures.count) items failed",
+                    message: first
+                )
+            }
+            self.model.reload()
+        }
+    }
+
+    private func uploadLocalItem(
+        _ source: URL,
+        to target: URL,
+        using transfer: RemoteFileTransferring
+    ) async throws {
+        let isDirectory = (try? source.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+        if isDirectory {
+            do {
+                try await model.fileProvider.createDirectory(at: target)
+            } catch {
+                // Merging into an existing folder is fine; keep walking it.
+            }
+            let children = try FileManager.default.contentsOfDirectory(
+                at: source,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: []
+            )
+            for child in children {
+                try await uploadLocalItem(
+                    child,
+                    to: target.appendingPathComponent(child.lastPathComponent),
+                    using: transfer
+                )
+            }
+        } else {
+            try await transfer.upload(source, to: target)
+        }
+    }
+
+    private func uniqueRemoteDestination(named name: String, in directory: URL) async throws -> URL {
+        var candidate = directory.appendingPathComponent(name)
+        var index = 1
+        while (try? await model.fileProvider.metadata(for: candidate)) != nil {
+            let suffix = index == 1 ? " copy" : " copy \(index)"
+            let nsName = name as NSString
+            let base = nsName.deletingPathExtension
+            let ext = nsName.pathExtension
+            let newName = ext.isEmpty ? base + suffix : base + suffix + "." + ext
+            candidate = directory.appendingPathComponent(newName)
+            index += 1
+        }
+        return candidate
     }
 
     @objc func revealInFinderAction() {
@@ -1893,9 +2028,8 @@ extension BrowserPaneViewController: NSMenuItemValidation {
         guard model.isRemote else { return true }
         switch menuItem.action {
         case #selector(cut(_:)), #selector(copy(_:)), #selector(paste(_:)),
-             #selector(newFolderAction), #selector(renameAction),
              #selector(duplicateAction), #selector(batchRenameAction),
-             #selector(compressAction), #selector(moveToTrashAction),
+             #selector(compressAction),
              #selector(revealInFinderAction), #selector(openInTerminalAction),
              #selector(openInOtherPane), #selector(chooseOpenWithApplication):
             return false

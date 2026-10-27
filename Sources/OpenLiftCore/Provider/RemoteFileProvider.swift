@@ -578,20 +578,18 @@ public struct FTPRemoteProvider: FileProvider, RemoteFileTransferring {
     }
 
     public func createDirectory(at url: URL) async throws {
-        let parent = url.deletingLastPathComponent()
         _ = try await run(
-            url: ftpURL(parent, directory: true),
-            extra: ["quote = \"MKD \(escapeConfig(url.lastPathComponent))\""]
+            url: commandURL,
+            extra: ["quote = \"MKD \(escapeConfig(url.path))\""]
         )
     }
 
     public func move(_ source: URL, to destination: URL) async throws {
-        let parent = source.deletingLastPathComponent()
         _ = try await run(
-            url: ftpURL(parent, directory: true),
+            url: commandURL,
             extra: [
-                "quote = \"RNFR \(escapeConfig(source.lastPathComponent))\"",
-                "quote = \"RNTO \(escapeConfig(destination.lastPathComponent))\""
+                "quote = \"RNFR \(escapeConfig(source.path))\"",
+                "quote = \"RNTO \(escapeConfig(destination.path))\""
             ]
         )
     }
@@ -601,12 +599,21 @@ public struct FTPRemoteProvider: FileProvider, RemoteFileTransferring {
     }
 
     public func delete(_ url: URL) async throws {
-        let parent = url.deletingLastPathComponent()
-        let isDirectory = await isDirectory(url)
-        let command = isDirectory
-            ? "RMD \(escapeConfig(url.lastPathComponent))"
-            : "DELE \(escapeConfig(url.lastPathComponent))"
-        _ = try await run(url: ftpURL(parent, directory: true), extra: ["quote = \"\(command)\""])
+        if await isDirectory(url) {
+            let children = try await list(url, options: ListOptions(showHidden: true))
+            for child in children {
+                try await delete(child.url)
+            }
+            _ = try await run(
+                url: commandURL,
+                extra: ["quote = \"RMD \(escapeConfig(url.path))\""]
+            )
+        } else {
+            _ = try await run(
+                url: commandURL,
+                extra: ["quote = \"DELE \(escapeConfig(url.path))\""]
+            )
+        }
     }
 
     public func trash(_ url: URL) async throws -> URL {
@@ -645,6 +652,10 @@ public struct FTPRemoteProvider: FileProvider, RemoteFileTransferring {
     }
 
     // MARK: Transport
+
+    private var commandURL: String {
+        ftpURL(URL(fileURLWithPath: "/"), directory: true)
+    }
 
     private func ftpURL(_ url: URL, directory: Bool) -> String {
         var components = URLComponents()

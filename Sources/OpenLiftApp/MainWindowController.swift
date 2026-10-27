@@ -22,6 +22,7 @@ public final class MainWindowController: NSWindowController {
     private var shortcutsWindowController: ShortcutsWindowController?
     private var searchWindowController: AdvancedSearchWindowController?
     private var remoteConnectionController: RemoteConnectionWindowController?
+    private let bookmarkStore = RemoteBookmarkStore()
     private let shortcuts = ShortcutStore()
 
     private var isSinglePane = false
@@ -392,10 +393,17 @@ public final class MainWindowController: NSWindowController {
     // MARK: - Remote
 
     @objc func connectToServer(_ sender: Any?) {
+        presentRemoteConnection(prefill: nil)
+    }
+
+    private func presentRemoteConnection(prefill: RemoteConnection?) {
         if remoteConnectionController == nil {
             let controller = RemoteConnectionWindowController()
-            controller.onConnect = { [weak self] connection in
+            controller.onConnect = { [weak self] connection, save in
                 guard let self else { return }
+                if save {
+                    self.bookmarkStore.add(RemoteBookmark(connection: connection))
+                }
                 let provider = RemoteProviderFactory.make(connection)
                 self.activeTabs.newRemoteTab(
                     provider: provider,
@@ -404,7 +412,24 @@ public final class MainWindowController: NSWindowController {
             }
             remoteConnectionController = controller
         }
-        remoteConnectionController?.present(on: window)
+        remoteConnectionController?.present(on: window, prefill: prefill)
+    }
+
+    @objc private func connectBookmark(_ sender: Any?) {
+        guard let raw = (sender as? NSMenuItem)?.representedObject as? String,
+              let id = UUID(uuidString: raw),
+              let bookmark = bookmarkStore.load().first(where: { $0.id == id }) else { return }
+        presentRemoteConnection(prefill: bookmark.connection)
+    }
+
+    @objc private func forgetBookmarks(_ sender: Any?) {
+        let alert = NSAlert()
+        alert.messageText = "Forget all saved servers?"
+        alert.informativeText = "Saved addresses are removed. Passwords were never stored."
+        alert.addButton(withTitle: "Forget")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        bookmarkStore.removeAll()
     }
 
     @objc func downloadToOtherPane(_ sender: Any?) {
@@ -413,6 +438,16 @@ public final class MainWindowController: NSWindowController {
             return
         }
         activePane.downloadSelection(to: otherPane.model.directory)
+    }
+
+    @objc func uploadToOtherPane(_ sender: Any?) {
+        guard !activePane.model.isRemote, otherPane.model.isRemote else {
+            NSSound.beep()
+            return
+        }
+        let sources = activePane.selectedItems.map(\.url)
+        guard !sources.isEmpty else { return }
+        otherPane.uploadSelection(sources)
     }
 
     // MARK: - Search
@@ -790,15 +825,22 @@ extension MainWindowController: NSMenuItemValidation {
             return !activePane.model.isSearchResults
                 && !activePane.model.isRemote
                 && !FileClipboard.shared.urls.isEmpty
-        case #selector(newFolder(_:)), #selector(showAdvancedSearch(_:)):
-            return !activePane.model.isSearchResults && !activePane.model.isRemote
+        case #selector(newFolder(_:)):
+            return !activePane.model.isSearchResults
+        case #selector(renameSelection(_:)), #selector(moveToTrash(_:)):
+            return !activePane.selectedItems.isEmpty
+        case #selector(showAdvancedSearch(_:)):
+            return !activePane.model.isRemote && !activePane.model.isSearchResults
         case #selector(batchRenameSelection(_:)), #selector(compressSelection(_:)),
-             #selector(duplicateSelection(_:)), #selector(renameSelection(_:)),
-             #selector(moveToTrash(_:)):
+             #selector(duplicateSelection(_:)):
             return !activePane.model.isRemote && !activePane.selectedItems.isEmpty
         case #selector(downloadToOtherPane(_:)):
             return activePane.model.isRemote
                 && !otherPane.model.isRemote
+                && !activePane.selectedItems.isEmpty
+        case #selector(uploadToOtherPane(_:)):
+            return !activePane.model.isRemote
+                && otherPane.model.isRemote
                 && !activePane.selectedItems.isEmpty
         case #selector(goBack(_:)):
             return !activePane.model.isSearchResults && activePane.model.canGoBack
@@ -878,6 +920,10 @@ extension MainWindowController: NSToolbarDelegate {
 extension MainWindowController: NSMenuDelegate {
     public func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
+        if menu.identifier?.rawValue == "servers" {
+            populateServers(menu)
+            return
+        }
         guard let file = activePane.selectedItems.first?.url else {
             let empty = menu.addItem(withTitle: "No Selection", action: nil, keyEquivalent: "")
             empty.isEnabled = false
@@ -909,6 +955,33 @@ extension MainWindowController: NSMenuDelegate {
         )
         other.target = self
         menu.addItem(other)
+    }
+
+    private func populateServers(_ menu: NSMenu) {
+        let bookmarks = bookmarkStore.load()
+        if bookmarks.isEmpty {
+            let empty = menu.addItem(withTitle: "No Saved Servers", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            return
+        }
+        for bookmark in bookmarks {
+            let item = NSMenuItem(
+                title: bookmark.name,
+                action: #selector(connectBookmark(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = bookmark.id.uuidString
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        let forget = NSMenuItem(
+            title: "Forget Saved Servers…",
+            action: #selector(forgetBookmarks(_:)),
+            keyEquivalent: ""
+        )
+        forget.target = self
+        menu.addItem(forget)
     }
 
     @objc private func openSelectionWith(_ sender: Any?) {
@@ -947,9 +1020,7 @@ extension MainWindowController: NSToolbarItemValidation {
         case "up":
             return !results && activePane.model.canGoUp
         case "newFolder":
-            return !results && !activePane.model.isRemote
-        case "trash":
-            return !activePane.model.isRemote
+            return !results
         default:
             return true
         }

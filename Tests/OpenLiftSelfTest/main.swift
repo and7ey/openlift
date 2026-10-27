@@ -601,6 +601,46 @@ do {
     check(RemoteProtocol.ftps.defaultPort == 21, "FTPS uses the FTP port")
 }
 
+// MARK: - Remote bookmarks
+
+do {
+    let suite = "OpenLiftSelfTest.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite) ?? .standard
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    let store = RemoteBookmarkStore(defaults: defaults, storageKey: "bookmarks")
+    let connection = RemoteConnection(
+        proto: .ftp,
+        host: "example.com",
+        port: 2121,
+        username: "demo",
+        password: "secret",
+        path: "/files"
+    )
+    let bookmark = RemoteBookmark(connection: connection)
+    check(bookmark.name.contains("demo@example.com"), "bookmarks have a readable name")
+    check(bookmark.connection.password.isEmpty, "bookmarks never keep passwords")
+
+    store.add(bookmark)
+    check(store.load().count == 1, "a server bookmark is saved")
+
+    var replacement = RemoteBookmark(connection: connection)
+    replacement.name = "Renamed server"
+    store.add(replacement)
+    check(store.load().count == 1, "saving the same server/path replaces the bookmark")
+    check(store.load().first?.name == "Renamed server", "replacement keeps the new label")
+
+    var other = RemoteBookmark(connection: connection)
+    other.path = "/other"
+    store.add(other)
+    check(store.load().count == 2, "different paths create separate bookmarks")
+
+    store.remove(replacement.id)
+    check(store.load().count == 1, "bookmarks can be removed")
+    store.removeAll()
+    check(store.load().isEmpty, "all bookmarks can be forgotten")
+}
+
 // MARK: - Undo records
 
 do {

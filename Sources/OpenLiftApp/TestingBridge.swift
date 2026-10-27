@@ -36,7 +36,9 @@ final class TestingBridge: NSObject {
         "undo:",
         "redo:",
         "connectToServer:",
-        "downloadToOtherPane:"
+        "downloadToOtherPane:",
+        "uploadToOtherPane:",
+        "renameSelection:"
     ]
 
     init(controller: MainWindowController) {

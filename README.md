@@ -30,7 +30,7 @@ Early development. The local-file MVP is in progress:
 | Undo / redo (copy/move/rename/trash/new folder) | done |
 | Activity window (live progress, session log) | done |
 | Quick Look, Get Info, Open With | done |
-| Remote: SFTP/FTP connections, browsing, download | partial |
+| Remote: SFTP/FTP browsing, upload/download, mutations, bookmarks | done (FTPS live check pending) |
 | Search: in-folder filter + advanced window (recursive, content, preview) | done |
 | ZIP archives | done |
 | Icon view | done |
@@ -86,7 +86,7 @@ Release builds compile the bridge out.
 The runner covers ordering/grouping, favorites persistence, per-folder view
 settings, tab-aware window state, the local provider (listing, hidden files,
 move, create, delete), file transfers, undo records, the activity log, search,
-archives, advanced search, batch rename, remote listing parsing, app settings and shortcuts — 160 checks, all
+archives, advanced search, batch rename, remote listings/bookmarks, app settings and shortcuts — 168 checks, all
 dependency-free. When Xcode is
 available, `Tests/OpenLiftTests/OpenLiftTests.swift` can be re-enabled as a
 `swift-testing` target in `Package.swift`.
@@ -113,7 +113,8 @@ Sources/
     Model/            FileItem, SortDescriptor, ViewSettings, Favorite
     Operations/       TransferPlanner, TransferExecutor, SearchEngine, progress
     Provider/         FileProvider protocol, LocalFileProvider, SearchResultsProvider,
-                      SFTPRemoteProvider, FTPRemoteProvider, DirectoryWatcher
+                      SFTPRemoteProvider, FTPRemoteProvider, RemoteBookmark,
+                      DirectoryWatcher
     Persistence/      FavoritesStore, WindowStateStore, ViewSettingsStore
   OpenLiftUI/         AppKit views
     Browser/          BrowserTabsViewController, BrowserPaneViewController,
@@ -167,10 +168,13 @@ Design notes:
 - Remote tabs are session-only. SFTP is driven through the system `sftp`
   binary inside a pseudo-terminal (password or SSH agent); FTP/FTPS use
   `curl` with credentials passed on stdin, never in argv. Passwords are not
-  persisted. Remote panes support browsing, refresh, navigation, Quick Look
-  (downloads to the cache) and “Download to Other Pane”; local-only mutations,
-  search, clipboard operations and rename/compress are disabled until upload
-  and remote mutation support lands.
+  persisted; saved servers live in Go ▸ Servers and never include credentials.
+  Remote panes support browsing, navigation, refresh, Quick Look (download
+  cache), Download to Other Pane, Upload to Other Pane, new folder, rename and
+  permanent delete (remote mutations are not undoable). Clipboard operations,
+  batch rename, compress, advanced search and drag & drop stay local-only.
+  FTPS is implemented with explicit TLS but has not yet been verified against
+  a live FTPS server.
 - Batch rename builds a plan first: template tokens (`{name}`, `{ext}`,
   `{n}`/`{nn}`, `{date}`), find/replace, numbering and a live old/new/status
   preview. Conflicts with existing or duplicate names block Apply. Execution
@@ -220,6 +224,7 @@ See [`docs/spec/mvp.md`](docs/spec/mvp.md) for the full MVP specification and
 | Advanced Search | ⇧⌘F |
 | Connect to Server | ⌘K |
 | Download to Other Pane | ⌥⌘D |
+| Upload to Other Pane | ⌥⌘U |
 | Settings | ⌘, |
 | Show Hidden Files | ⇧⌘. |
 | Show Sidebar | ⌃⌘S |

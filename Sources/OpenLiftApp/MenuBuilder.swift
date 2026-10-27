@@ -67,6 +67,7 @@ public enum MenuBuilder {
         menu.addItem(makeItem("Open", #selector(MainWindowController.openSelection(_:)), "o", [.command], target))
         let openWithItem = NSMenuItem(title: "Open With", action: nil, keyEquivalent: "")
         let openWithMenu = NSMenu(title: "Open With")
+        openWithMenu.identifier = NSUserInterfaceItemIdentifier("openWith")
         openWithMenu.delegate = target as? NSMenuDelegate
         openWithItem.submenu = openWithMenu
         menu.addItem(openWithItem)
@@ -76,6 +77,7 @@ public enum MenuBuilder {
         menu.addItem(makeItem("Copy to Other Pane", #selector(MainWindowController.copyToOtherPane(_:)), "c", [.command, .control], target))
         menu.addItem(makeItem("Move to Other Pane", #selector(MainWindowController.moveToOtherPane(_:)), "m", [.command, .control], target))
         menu.addItem(makeItem("Download to Other Pane", #selector(MainWindowController.downloadToOtherPane(_:)), "d", [.command, .option], target))
+        menu.addItem(makeItem("Upload to Other Pane", #selector(MainWindowController.uploadToOtherPane(_:)), "u", [.command, .option], target))
         menu.addItem(.separator())
         menu.addItem(makeItem("Move to Trash", #selector(MainWindowController.moveToTrash(_:)), String(UnicodeScalar(NSBackspaceCharacter)!), [.command], target))
         menu.addItem(.separator())
@@ -158,6 +160,12 @@ public enum MenuBuilder {
         menu.addItem(makeItem("Go to Folder…", #selector(MainWindowController.goToFolder(_:)), "g", [.command, .shift], target))
         menu.addItem(.separator())
         menu.addItem(makeItem("Connect to Server…", #selector(MainWindowController.connectToServer(_:)), "k", [.command], target))
+        let serversItem = NSMenuItem(title: "Servers", action: nil, keyEquivalent: "")
+        let serversMenu = NSMenu(title: "Servers")
+        serversMenu.identifier = NSUserInterfaceItemIdentifier("servers")
+        serversMenu.delegate = target as? NSMenuDelegate
+        serversItem.submenu = serversMenu
+        menu.addItem(serversItem)
         item.submenu = menu
         return item
     }

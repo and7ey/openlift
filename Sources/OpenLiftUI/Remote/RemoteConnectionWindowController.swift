@@ -7,7 +7,7 @@ import OpenLiftCore
 /// agent or keys for SFTP). Nothing is written to disk.
 @MainActor
 public final class RemoteConnectionWindowController: NSWindowController {
-    public var onConnect: ((RemoteConnection) -> Void)?
+    public var onConnect: ((RemoteConnection, _ save: Bool) -> Void)?
 
     private let protocolPopup = NSPopUpButton()
     private let hostField = NSTextField()
@@ -16,6 +16,11 @@ public final class RemoteConnectionWindowController: NSWindowController {
     private let passwordField = NSSecureTextField()
     private let pathField = NSTextField()
     private let hintLabel = NSTextField(wrappingLabelWithString: "")
+    private let saveBookmarkButton = NSButton(
+        checkboxWithTitle: "Save this connection in the Servers menu",
+        target: nil,
+        action: nil
+    )
     private let connectButton = NSButton(title: "Connect", target: nil, action: nil)
 
     private var lastDefaultPort: Int = RemoteProtocol.sftp.defaultPort
@@ -40,14 +45,18 @@ public final class RemoteConnectionWindowController: NSWindowController {
         fatalError("init(coder:) is not supported")
     }
 
-    public func present(on parent: NSWindow?) {
-        hostField.stringValue = ""
-        portField.stringValue = "\(RemoteProtocol.sftp.defaultPort)"
-        userField.stringValue = ""
+    public func present(on parent: NSWindow?, prefill: RemoteConnection? = nil) {
+        let proto = prefill?.proto ?? .sftp
+        protocolPopup.selectItem(
+            at: RemoteProtocol.allCases.firstIndex(of: proto) ?? 0
+        )
+        hostField.stringValue = prefill?.host ?? ""
+        portField.stringValue = "\(prefill?.port ?? proto.defaultPort)"
+        userField.stringValue = prefill?.username ?? ""
         passwordField.stringValue = ""
-        pathField.stringValue = "/"
-        protocolPopup.selectItem(at: 0)
-        lastDefaultPort = RemoteProtocol.sftp.defaultPort
+        pathField.stringValue = prefill?.path ?? "/"
+        saveBookmarkButton.state = .off
+        lastDefaultPort = proto.defaultPort
         updateHint()
         updateConnectState()
         showWindow(nil)
@@ -120,7 +129,15 @@ public final class RemoteConnectionWindowController: NSWindowController {
         buttons.orientation = .horizontal
         buttons.spacing = 8
 
-        let form = NSStackView(views: [protocolRow, hostRow, userRow, passwordRow, pathRow, hintLabel])
+        let form = NSStackView(views: [
+            protocolRow,
+            hostRow,
+            userRow,
+            passwordRow,
+            pathRow,
+            saveBookmarkButton,
+            hintLabel
+        ])
         form.orientation = .vertical
         form.alignment = .leading
         form.spacing = 10
@@ -162,8 +179,9 @@ public final class RemoteConnectionWindowController: NSWindowController {
 
     @objc private func connect(_ sender: Any?) {
         guard let connection else { return }
+        let save = saveBookmarkButton.state == .on
         dismiss()
-        onConnect?(connection)
+        onConnect?(connection, save)
     }
 
     @objc private func cancel(_ sender: Any?) {
