@@ -42,6 +42,7 @@ public final class BrowserPaneViewController: NSViewController {
     nonisolated(unsafe) private var searchKeyMonitor: Any?
     private var isRestoringSelection = false
 
+    private var batchRenameController: BatchRenameWindowController?
     private var iconCache: [String: NSImage] = [:]
     /// Selection is remembered by URL so grouping/refresh re-selection is stable.
     private var selectedURLCache: Set<URL> = []
@@ -338,6 +339,7 @@ public final class BrowserPaneViewController: NSViewController {
         menu.addItem(withTitle: "New Folder", action: #selector(newFolderAction), keyEquivalent: "")
         menu.addItem(withTitle: "Rename…", action: #selector(renameAction), keyEquivalent: "")
         menu.addItem(withTitle: "Duplicate", action: #selector(duplicateAction), keyEquivalent: "")
+        menu.addItem(withTitle: "Batch Rename…", action: #selector(batchRenameAction), keyEquivalent: "")
         menu.addItem(withTitle: "Compress", action: #selector(compressAction), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Move to Trash", action: #selector(moveToTrashAction), keyEquivalent: "")
@@ -870,6 +872,34 @@ public final class BrowserPaneViewController: NSViewController {
                 present(error: error)
             }
         }
+    }
+
+    /// Opens the batch rename sheet for the current selection.
+    public func performBatchRename() {
+        let urls = selectedItems.map(\.url)
+        guard !urls.isEmpty else { return }
+
+        let controller = BatchRenameWindowController(urls: urls)
+        batchRenameController = controller
+        controller.onApply = { [weak self] pairs in
+            guard let self, !pairs.isEmpty else { return }
+            self.onOperation?(FileOperationRecord(kind: .rename, pairs: pairs))
+
+            let title = pairs.count == 1
+                ? "Batch Rename “\(pairs[0].source.lastPathComponent)”"
+                : "Batch Rename \(pairs.count) items"
+            let id = ActivityLog.shared.begin(title: title, detail: "\(pairs.count) items")
+            ActivityLog.shared.finish(id, status: .completed)
+            self.model.reload()
+        }
+        controller.onDismiss = { [weak self] in
+            self?.batchRenameController = nil
+        }
+        controller.present(on: view.window)
+    }
+
+    @objc func batchRenameAction() {
+        performBatchRename()
     }
 
     @objc func duplicateAction() {

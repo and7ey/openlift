@@ -67,7 +67,7 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned
 - [ ] Folder sync / compare
 - [ ] Archive browsing
 - [ ] Git status and actions
-- [ ] Batch rename
+- [x] Batch rename (template tokens, find/replace, numbering, preview)
 - [ ] Themes
 
 ## Engineering notes

@@ -26,6 +26,7 @@ Early development. The local-file MVP is in progress:
 | Drag & drop, copy/move between panes | done |
 | Clipboard (cut/copy/paste, Finder interop) | done |
 | Transfers: progress, cancel, conflicts with “apply to all” | done |
+| Batch rename (template, find/replace, numbering, live preview) | done |
 | Undo / redo (copy/move/rename/trash/new folder) | done |
 | Activity window (live progress, session log) | done |
 | Quick Look, Get Info, Open With | done |
@@ -84,7 +85,7 @@ Release builds compile the bridge out.
 The runner covers ordering/grouping, favorites persistence, per-folder view
 settings, tab-aware window state, the local provider (listing, hidden files,
 move, create, delete), file transfers, undo records, the activity log, search,
-archives, advanced search, app settings and shortcuts — 133 checks, all
+archives, advanced search, batch rename, app settings and shortcuts — 148 checks, all
 dependency-free. When Xcode is
 available, `Tests/OpenLiftTests/OpenLiftTests.swift` can be re-enabled as a
 `swift-testing` target in `Package.swift`.
@@ -161,6 +162,11 @@ Design notes:
   compress) work, while paste, new folder and navigation into the virtual
   folder are disabled. Results tabs
   are session-only and are not restored on relaunch.
+- Batch rename builds a plan first: template tokens (`{name}`, `{ext}`,
+  `{n}`/`{nn}`, `{date}`), find/replace, numbering and a live old/new/status
+  preview. Conflicts with existing or duplicate names block Apply. Execution
+  stages every source under a temporary name, so name swaps and case-only
+  renames never overwrite data; the whole batch is one undo record.
 - “Compress” builds a ZIP with the system `zip` tool, so there is no archive
   dependency; the work runs off the main actor and is logged in Activity.
 - `ActivityLog` is an in-memory session log shared by the panes and the
@@ -187,6 +193,7 @@ See [`docs/spec/mvp.md`](docs/spec/mvp.md) for the full MVP specification and
 | Cut / Copy / Paste | ⌘X / ⌘C / ⌘V |
 | New Folder | ⇧⌘N |
 | Rename | ↩ |
+| Batch Rename | ⌥⌘R |
 | Duplicate | ⌘D |
 | Open | ⌘O |
 | Move to Trash | ⌘⌫ |

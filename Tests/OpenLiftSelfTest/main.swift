@@ -430,6 +430,125 @@ do {
     print("FAIL advanced search: \(error)")
 }
 
+// MARK: - Batch rename
+
+do {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let alpha = root.appendingPathComponent("alpha.txt")
+    let beta = root.appendingPathComponent("beta.txt")
+    let gamma = root.appendingPathComponent("gamma.md")
+    try Data("A".utf8).write(to: alpha)
+    try Data("B".utf8).write(to: beta)
+    try Data("G".utf8).write(to: gamma)
+
+    let planner = BatchRenamePlanner()
+    var plan = planner.plan(
+        urls: [alpha, beta, gamma],
+        options: BatchRenameOptions(template: "{name}-{nn}{ext}", startNumber: 1, numberPadding: 2)
+    )
+    check(plan.entries.map(\.proposedName) == ["alpha-01.txt", "beta-02.txt", "gamma-03.md"], "batch template numbers in name order")
+
+    plan = planner.plan(
+        urls: [alpha],
+        options: BatchRenameOptions(find: "a", replace: "X")
+    )
+    check(plan.entries.first?.proposedName == "XlphX.txt", "batch find/replace is case-insensitive by default")
+
+    plan = planner.plan(
+        urls: [alpha],
+        options: BatchRenameOptions(find: "A", replace: "X", caseSensitive: true)
+    )
+    check(plan.entries.first?.proposedName == "alpha.txt", "case-sensitive find skips lowercase matches")
+    check(plan.hasChanges == false, "an unchanged plan reports no changes")
+
+    let dottedFolder = root.appendingPathComponent("Docs.v1", isDirectory: true)
+    try FileManager.default.createDirectory(at: dottedFolder, withIntermediateDirectories: true)
+    plan = planner.plan(
+        urls: [dottedFolder],
+        options: BatchRenameOptions(template: "{name}-{n}")
+    )
+    check(plan.entries.first?.proposedName == "Docs.v1-1", "folders keep dots in their base name")
+
+    let dirA = root.appendingPathComponent("A", isDirectory: true)
+    let dirB = root.appendingPathComponent("B", isDirectory: true)
+    try FileManager.default.createDirectory(at: dirA, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: dirB, withIntermediateDirectories: true)
+    let fileA = dirA.appendingPathComponent("a.txt")
+    let fileB = dirB.appendingPathComponent("b.txt")
+    try Data("a".utf8).write(to: fileA)
+    try Data("b".utf8).write(to: fileB)
+    plan = planner.plan(
+        urls: [fileA, fileB],
+        options: BatchRenameOptions(template: "same.txt")
+    )
+    check(plan.isValid, "the same new name is allowed in different folders")
+
+    let existing = root.appendingPathComponent("existing.txt")
+    try Data("E".utf8).write(to: existing)
+    plan = planner.plan(
+        urls: [alpha],
+        options: BatchRenameOptions(template: "existing.txt")
+    )
+    check(plan.entries.first?.issue != nil, "batch rename refuses to overwrite an existing name")
+
+    plan = planner.plan(
+        urls: [alpha, beta],
+        options: BatchRenameOptions(template: "same.txt")
+    )
+    check(plan.entries.allSatisfy { $0.issue != nil }, "batch rename refuses duplicate proposed names")
+
+    plan = planner.plan(
+        urls: [alpha],
+        options: BatchRenameOptions(template: "bad/name{ext}")
+    )
+    check(plan.entries.first?.issue != nil, "batch rename rejects slashes")
+
+    let executablePlan = planner.plan(
+        urls: [alpha, beta, gamma],
+        options: BatchRenameOptions(template: "{name}-renamed{ext}")
+    )
+    check(executablePlan.isValid, "a clean plan is valid")
+    let pairs = try BatchRenameExecutor().execute(executablePlan)
+    check(pairs.count == 3, "executor reports one pair per renamed item")
+    check(FileManager.default.fileExists(atPath: root.appendingPathComponent("alpha-renamed.txt").path), "executor writes the new name")
+    check(!FileManager.default.fileExists(atPath: alpha.path), "executor removes the old name")
+    check(
+        (try? String(contentsOf: root.appendingPathComponent("beta-renamed.txt"), encoding: .utf8)) == "B",
+        "executor preserves contents"
+    )
+
+    // Swapping two names must go through staging, not overwrite half-way.
+    let swapA = root.appendingPathComponent("swapA.txt")
+    let swapB = root.appendingPathComponent("swapB.txt")
+    try Data("one".utf8).write(to: swapA)
+    try Data("two".utf8).write(to: swapB)
+    let swapPlan = BatchRenamePlan(entries: [
+        BatchRenameEntry(
+            source: swapA,
+            originalName: "swapA.txt",
+            proposedName: "swapB.txt",
+            issue: nil
+        ),
+        BatchRenameEntry(
+            source: swapB,
+            originalName: "swapB.txt",
+            proposedName: "swapA.txt",
+            issue: nil
+        )
+    ])
+    _ = try BatchRenameExecutor().execute(swapPlan)
+    check(
+        (try? String(contentsOf: swapB, encoding: .utf8)) == "one"
+            && (try? String(contentsOf: swapA, encoding: .utf8)) == "two",
+        "executor swaps names without losing data"
+    )
+} catch {
+    failures += 1
+    print("FAIL batch rename: \(error)")
+}
+
 // MARK: - Undo records
 
 do {

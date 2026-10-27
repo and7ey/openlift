@@ -30,7 +30,10 @@ final class TestingBridge: NSObject {
         "searchContentsFromMenu:",
         "filterFromMenu:",
         "showShortcuts:",
-        "showSettings:"
+        "showSettings:",
+        "batchRenameSelection:",
+        "undo:",
+        "redo:"
     ]
 
     init(controller: MainWindowController) {

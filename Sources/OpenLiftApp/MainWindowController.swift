@@ -595,6 +595,8 @@ public final class MainWindowController: NSWindowController {
 
     @objc public func compressSelection(_ sender: Any?) { activePane.compressSelection() }
 
+    @objc public func batchRenameSelection(_ sender: Any?) { activePane.performBatchRename() }
+
     @objc public func toggleHiddenFiles(_ sender: Any?) {
         activePane.model.settings.showHidden.toggle()
     }
@@ -734,7 +736,7 @@ extension MainWindowController: NSMenuItemValidation {
             return !activePane.model.isSearchResults
         case #selector(quickLook(_:)), #selector(showInfo(_:)):
             return !activePane.selectedItems.isEmpty
-        case #selector(compressSelection(_:)):
+        case #selector(compressSelection(_:)), #selector(batchRenameSelection(_:)):
             return !activePane.selectedItems.isEmpty
         default:
             return true

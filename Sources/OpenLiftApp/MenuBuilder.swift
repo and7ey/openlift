@@ -61,6 +61,7 @@ public enum MenuBuilder {
         menu.addItem(makeItem("New Folder", #selector(MainWindowController.newFolder(_:)), "n", [.command, .shift], target))
         menu.addItem(makeItem("Rename…", #selector(MainWindowController.renameSelection(_:)), "\r", [], target))
         menu.addItem(makeItem("Duplicate", #selector(MainWindowController.duplicateSelection(_:)), "d", [.command], target))
+        menu.addItem(makeItem("Batch Rename…", #selector(MainWindowController.batchRenameSelection(_:)), "r", [.command, .option], target))
         menu.addItem(makeItem("Compress", #selector(MainWindowController.compressSelection(_:)), "", [], target))
         menu.addItem(.separator())
         menu.addItem(makeItem("Open", #selector(MainWindowController.openSelection(_:)), "o", [.command], target))
