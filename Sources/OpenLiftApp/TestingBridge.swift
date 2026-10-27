@@ -39,7 +39,8 @@ final class TestingBridge: NSObject {
         "downloadToOtherPane:",
         "uploadToOtherPane:",
         "renameSelection:",
-        "compareFolders:"
+        "compareFolders:",
+        "extractToOtherPane:"
     ]
 
     init(controller: MainWindowController) {

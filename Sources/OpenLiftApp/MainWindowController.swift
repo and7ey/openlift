@@ -185,12 +185,18 @@ public final class MainWindowController: NSWindowController {
             name: .openLiftAdvancedSearch,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleOpenArchive(_:)),
+            name: .openLiftOpenArchive,
+            object: nil
+        )
     }
 
     private func configureSidebar() {
         sidebarViewController.onSelect = { [weak self] url in
             guard let self else { return }
-            if self.activePane.model.isSearchResults || self.activePane.model.isRemote {
+            if self.activePane.model.isSearchResults || self.activePane.model.isRemote || self.activePane.model.isArchive {
                 self.activeTabs.newTab(at: url)
             } else {
                 self.activePane.model.navigate(to: url)
@@ -371,6 +377,10 @@ public final class MainWindowController: NSWindowController {
 
         let path = (field.stringValue as NSString).expandingTildeInPath
         guard !path.isEmpty else { return }
+        if activePane.model.isArchive {
+            NSSound.beep()
+            return
+        }
         if activePane.model.isRemote {
             var components = URLComponents(
                 url: activePane.model.directory,
@@ -419,6 +429,55 @@ public final class MainWindowController: NSWindowController {
             folderCompareController = controller
         }
         folderCompareController?.present(left: left, right: right)
+    }
+
+    // MARK: - Archives
+
+    @objc func openArchive(_ sender: Any?) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.zip, .archive]
+        panel.prompt = "Open Archive"
+        panel.begin { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            self?.openArchiveInTab(url)
+        }
+    }
+
+    @objc private func handleOpenArchive(_ notification: Notification) {
+        guard let url = notification.userInfo?["url"] as? URL else { return }
+        openArchiveInTab(url)
+    }
+
+    private func openArchiveInTab(_ url: URL) {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let reader = try ArchiveReader(url: url)
+                let entries = try await reader.entries()
+                let provider = ArchiveFileProvider(reader: reader, entries: entries)
+                self.activeTabs.newArchiveTab(provider: provider, directory: provider.root)
+            } catch {
+                let alert = NSAlert()
+                alert.alertStyle = .warning
+                alert.messageText = "Could not open archive"
+                alert.informativeText = error.localizedDescription
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+            }
+        }
+    }
+
+    @objc func extractToOtherPane(_ sender: Any?) {
+        guard activePane.model.isArchive,
+              !otherPane.model.isRemote,
+              !otherPane.model.isArchive else {
+            NSSound.beep()
+            return
+        }
+        activePane.extractSelection(to: otherPane.model.directory)
     }
 
     // MARK: - Remote
@@ -618,6 +677,11 @@ public final class MainWindowController: NSWindowController {
     }
 
     private func updateWindowTitle() {
+        if activePane.model.isArchive {
+            window?.title = activePane.model.displayName
+            window?.subtitle = "Archive"
+            return
+        }
         if activePane.model.isRemote {
             let provider = activePane.model.fileProvider
             let path = activePane.model.directory.path
@@ -704,6 +768,10 @@ public final class MainWindowController: NSWindowController {
 
     @objc public func goHome(_ sender: Any?) {
         guard !activePane.model.isSearchResults else { return }
+        if activePane.model.isArchive {
+            NSSound.beep()
+            return
+        }
         if activePane.model.isRemote {
             var components = URLComponents(
                 url: activePane.model.directory,
@@ -713,6 +781,11 @@ public final class MainWindowController: NSWindowController {
             if let url = components?.url {
                 activePane.model.navigate(to: url)
             }
+            return
+        }
+        if activePane.model.isArchive,
+           let provider = activePane.model.fileProvider as? ArchiveFileProvider {
+            activePane.model.navigate(to: provider.root)
             return
         }
         activePane.model.navigate(to: URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true))
@@ -850,20 +923,27 @@ extension MainWindowController: NSMenuItemValidation {
             menuItem.title = history.redoTitle
             return history.canRedo
         case #selector(cut(_:)), #selector(copy(_:)):
-            return !activePane.model.isRemote && !activePane.selectedItems.isEmpty
+            return !activePane.model.isRemote
+                && !activePane.model.isArchive
+                && !activePane.selectedItems.isEmpty
         case #selector(paste(_:)):
             return !activePane.model.isSearchResults
                 && !activePane.model.isRemote
+                && !activePane.model.isArchive
                 && !FileClipboard.shared.urls.isEmpty
         case #selector(newFolder(_:)):
-            return !activePane.model.isSearchResults
+            return !activePane.model.isSearchResults && !activePane.model.isArchive
         case #selector(renameSelection(_:)), #selector(moveToTrash(_:)):
-            return !activePane.selectedItems.isEmpty
+            return !activePane.model.isArchive && !activePane.selectedItems.isEmpty
         case #selector(showAdvancedSearch(_:)):
-            return !activePane.model.isRemote && !activePane.model.isSearchResults
+            return !activePane.model.isRemote
+                && !activePane.model.isArchive
+                && !activePane.model.isSearchResults
         case #selector(batchRenameSelection(_:)), #selector(compressSelection(_:)),
              #selector(duplicateSelection(_:)):
-            return !activePane.model.isRemote && !activePane.selectedItems.isEmpty
+            return !activePane.model.isRemote
+                && !activePane.model.isArchive
+                && !activePane.selectedItems.isEmpty
         case #selector(downloadToOtherPane(_:)):
             return activePane.model.isRemote
                 && !otherPane.model.isRemote
@@ -871,8 +951,16 @@ extension MainWindowController: NSMenuItemValidation {
         case #selector(compareFolders(_:)):
             return !activePane.model.isRemote
                 && !otherPane.model.isRemote
+                && !activePane.model.isArchive
+                && !otherPane.model.isArchive
                 && !activePane.model.isSearchResults
                 && !otherPane.model.isSearchResults
+        case #selector(extractToOtherPane(_:)):
+            return activePane.model.isArchive
+                && !otherPane.model.isRemote
+                && !otherPane.model.isArchive
+                && !otherPane.model.isSearchResults
+                && !activePane.selectedItems.isEmpty
         case #selector(uploadToOtherPane(_:)):
             return !activePane.model.isRemote
                 && otherPane.model.isRemote
@@ -1055,7 +1143,9 @@ extension MainWindowController: NSToolbarItemValidation {
         case "up":
             return !results && activePane.model.canGoUp
         case "newFolder":
-            return !results
+            return !results && !activePane.model.isArchive
+        case "trash":
+            return !activePane.model.isArchive
         default:
             return true
         }

@@ -105,12 +105,17 @@ public final class BrowserModel {
         provider.identifier.hasPrefix("remote:")
     }
 
+    /// True for a read-only archive browser pane.
+    public var isArchive: Bool {
+        provider.identifier == ArchiveFileProvider.identifierValue
+    }
+
     /// Provider behind this pane; used by remote-specific actions.
     public var fileProvider: FileProvider { provider }
 
     /// User-facing name of the current location.
     public var displayName: String {
-        if isRemote { return provider.displayName }
+        if isRemote || isArchive { return provider.displayName }
         if isSearchResults { return "Search Results" }
         if directory.path.hasSuffix("/com~apple~CloudDocs") { return "iCloud Drive" }
         let name = directory.lastPathComponent

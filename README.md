@@ -33,6 +33,7 @@ Early development. The local-file MVP is in progress:
 | Remote: SFTP/FTP/WebDAV browsing, transfers, mutations, bookmarks | done (FTPS live check pending) |
 | Cloud Drives: iCloud, Dropbox, Google Drive, OneDrive, Box folders | done via desktop clients |
 | Folder compare and copy sync | done (copy-only) |
+| Archive browsing (zip/tar, extract) | done |
 | Search: in-folder filter + advanced window (recursive, content, preview) | done |
 | ZIP archives | done |
 | Icon view | done |
@@ -88,7 +89,7 @@ Release builds compile the bridge out.
 The runner covers ordering/grouping, favorites persistence, per-folder view
 settings, tab-aware window state, the local provider (listing, hidden files,
 move, create, delete), file transfers, undo records, the activity log, search,
-archives, advanced search, batch rename, cloud drives, folder compare/sync, remote listings/bookmarks, WebDAV listings, app settings and shortcuts — 194 checks, all
+archives, advanced search, batch rename, archive browsing, cloud drives, folder compare/sync, remote listings/bookmarks, WebDAV listings, app settings and shortcuts — 201 checks, all
 dependency-free. When Xcode is
 available, `Tests/OpenLiftTests/OpenLiftTests.swift` can be re-enabled as a
 `swift-testing` target in `Package.swift`.
@@ -119,7 +120,7 @@ Sources/
                       FolderComparator, FolderSync, progress
     Provider/         FileProvider protocol, LocalFileProvider, SearchResultsProvider,
                       SFTPRemoteProvider, FTPRemoteProvider, WebDAVRemoteProvider,
-                      RemoteBookmark, DirectoryWatcher
+                      ArchiveFileProvider, RemoteBookmark, DirectoryWatcher
   OpenLiftUI/         AppKit views
     Browser/          BrowserTabsViewController, BrowserPaneViewController,
                       PaneTabBarView (path bar, table, status bar)
@@ -170,6 +171,11 @@ Design notes:
   compress) work, while paste, new folder and navigation into the virtual
   folder are disabled. Results tabs
   are session-only and are not restored on relaunch.
+- Archives are read-only tabs: `zip`/`tar` listings are parsed from the system
+  tools, folders are synthesized when the archive omits directory entries, and
+  files are extracted through the same tools. Double-clicking a zip/tar file
+  opens it as a tab; Quick Look and open extract to a cache first, and
+  “Extract to Other Pane” copies files or whole folders out.
 - Cloud Drives in the sidebar are the folders kept in sync by the vendors'
   desktop clients (iCloud Drive, Dropbox, Google Drive, OneDrive, Box); they
   open as normal local folders, so sign-in and conflict handling stay with the
@@ -242,6 +248,8 @@ See [`docs/spec/mvp.md`](docs/spec/mvp.md) for the full MVP specification and
 | Download to Other Pane | ⌥⌘D |
 | Upload to Other Pane | ⌥⌘U |
 | Compare Folders | ⇧⌘C |
+| Open Archive | ⌥⌘O |
+| Extract to Other Pane | ⌥⌘E |
 | Settings | ⌘, |
 | Show Hidden Files | ⇧⌘. |
 | Show Sidebar | ⌃⌘S |

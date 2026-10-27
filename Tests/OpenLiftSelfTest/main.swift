@@ -803,6 +803,50 @@ do {
     print("FAIL folder comparison: \(error)")
 }
 
+// MARK: - Archive browsing
+
+do {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let payload = root.appendingPathComponent("payload", isDirectory: true)
+    let sub = payload.appendingPathComponent("sub", isDirectory: true)
+    try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
+    try Data("deep".utf8).write(to: sub.appendingPathComponent("deep.txt"))
+    try Data("top".utf8).write(to: payload.appendingPathComponent("top.txt"))
+
+    let zip = root.appendingPathComponent("payload.zip")
+    _ = try await ArchiveCreator().createArchive(containing: [payload], to: zip)
+    let reader = try ArchiveReader(url: zip)
+    let entries = try await reader.entries()
+    check(entries.contains { $0.path == "payload/top.txt" && !$0.isDirectory }, "zip reader lists files")
+    check(entries.contains { $0.path == "payload/sub" && $0.isDirectory }, "zip reader synthesizes folders")
+    check(entries.first(where: { $0.path == "payload/top.txt" })?.size == 3, "zip reader reads sizes")
+
+    let provider = ArchiveFileProvider(reader: reader, entries: entries)
+    let roots = try await provider.list(provider.root, options: ListOptions())
+    check(roots.first(where: { $0.name == "payload" })?.isDirectory == true, "archive provider lists the root folder")
+    let payloadURL = provider.root.appendingPathComponent("payload")
+    let children = try await provider.list(payloadURL, options: ListOptions())
+    check(children.contains { $0.name == "sub" && $0.isDirectory }, "archive provider browses nested folders")
+
+    let extracted = root.appendingPathComponent("extracted.txt")
+    try await provider.extract("payload/top.txt", to: extracted)
+    check((try? String(contentsOf: extracted, encoding: .utf8)) == "top", "archive provider extracts a file")
+
+    let tar = root.appendingPathComponent("payload.tar")
+    let tarProcess = Process()
+    tarProcess.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
+    tarProcess.currentDirectoryURL = root
+    tarProcess.arguments = ["-cf", tar.path, "payload"]
+    try tarProcess.run()
+    tarProcess.waitUntilExit()
+    let tarEntries = try await ArchiveReader(url: tar).entries()
+    check(tarEntries.contains { $0.path == "payload/top.txt" }, "tar reader lists files")
+} catch {
+    failures += 1
+    print("FAIL archive browsing: \(error)")
+}
+
 // MARK: - Undo records
 
 do {

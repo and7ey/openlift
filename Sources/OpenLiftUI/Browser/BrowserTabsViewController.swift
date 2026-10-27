@@ -100,7 +100,7 @@ public final class BrowserTabsViewController: NSViewController {
     public func tabStates() -> [PaneState] {
         // Search results and remote sessions are session-only; a relaunch
         // restores real local folders.
-        panes.filter { !$0.model.isSearchResults && !$0.model.isRemote }.map { pane in
+        panes.filter { !$0.model.isSearchResults && !$0.model.isRemote && !$0.model.isArchive }.map { pane in
             PaneState(
                 path: pane.model.directory.path,
                 backHistory: pane.model.backStack.map(\.path),
@@ -111,7 +111,7 @@ public final class BrowserTabsViewController: NSViewController {
     }
 
     public func newTab(at url: URL? = nil) {
-        let useFallback = activeModel.isSearchResults || activeModel.isRemote
+        let useFallback = activeModel.isSearchResults || activeModel.isRemote || activeModel.isArchive
         let directory = url ?? (useFallback ? lastBrowserDirectory : activeModel.directory)
         let model = BrowserModel(
             provider: provider,
@@ -147,6 +147,22 @@ public final class BrowserTabsViewController: NSViewController {
 
     /// Opens a session tab backed by a remote provider.
     public func newRemoteTab(provider: FileProvider, directory: URL) {
+        var settings = activeModel.settings
+        settings.mode = .list
+        settings.group = .none
+        let model = BrowserModel(
+            provider: provider,
+            directory: directory,
+            settings: settings,
+            settingsStore: nil
+        )
+        panes.append(makePane(model: model))
+        activeIndex = panes.count - 1
+        showActivePane()
+    }
+
+    /// Opens an archive in a read-only tab.
+    public func newArchiveTab(provider: ArchiveFileProvider, directory: URL) {
         var settings = activeModel.settings
         settings.mode = .list
         settings.group = .none

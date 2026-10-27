@@ -74,7 +74,7 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned
 - [x] Cloud drives via installed desktop sync folders (iCloud, Dropbox, Drive, OneDrive, Box)
   - [ ] Native OAuth providers for machines without the desktop clients
 - [x] Folder compare and copy sync (left↔right, no deletions)
-- [ ] Archive browsing
+- [x] Archive browsing (zip/tar read-only tabs, extract)
 - [ ] Git status and actions
 - [x] Batch rename (template tokens, find/replace, numbering, preview)
 - [ ] Themes

@@ -48,6 +48,9 @@ public final class BrowserPaneViewController: NSViewController {
     private var remoteTransfer: RemoteFileTransferring? {
         model.fileProvider as? RemoteFileTransferring
     }
+    private var archiveProvider: ArchiveFileProvider? {
+        model.fileProvider as? ArchiveFileProvider
+    }
     /// Selection is remembered by URL so grouping/refresh re-selection is stable.
     private var selectedURLCache: Set<URL> = []
     /// Sorted rows and icon sections are built once per model change; building
@@ -392,14 +395,22 @@ public final class BrowserPaneViewController: NSViewController {
 
     private func reloadView() {
         let resultsMode = model.isSearchResults
+        let virtualLocation = model.isRemote || model.isArchive
         pathHeight?.constant = resultsMode ? 0 : 24
-        pathControl.isHidden = resultsMode || model.isRemote
-        remotePathLabel.isHidden = !model.isRemote
+        pathControl.isHidden = resultsMode || virtualLocation
+        remotePathLabel.isHidden = !virtualLocation
         if model.isRemote {
             remotePathLabel.stringValue = model.directory.absoluteString
             remotePathLabel.toolTip = model.directory.absoluteString
+        } else if model.isArchive, let archiveProvider {
+            let relative = archiveProvider.relativePath(for: model.directory)
+            let text = relative.isEmpty
+                ? archiveProvider.displayName
+                : "\(archiveProvider.displayName) / \(relative)"
+            remotePathLabel.stringValue = text
+            remotePathLabel.toolTip = text
         }
-        searchOptionsButton.isHidden = resultsMode || model.isRemote
+        searchOptionsButton.isHidden = resultsMode || virtualLocation
         if !resultsMode, !model.isRemote {
             pathControl.url = model.directory
         }
@@ -659,6 +670,22 @@ public final class BrowserPaneViewController: NSViewController {
             }
             return
         }
+        if model.isArchive {
+            if item.isBrowsableDirectory {
+                model.navigate(to: item.url)
+            } else {
+                openArchiveItem(item)
+            }
+            return
+        }
+        if ArchiveFormat.detect(item.url) != nil, model.directory.isFileURL {
+            NotificationCenter.default.post(
+                name: .openLiftOpenArchive,
+                object: self,
+                userInfo: ["url": item.url]
+            )
+            return
+        }
         if item.isBrowsableDirectory {
             if model.isSearchResults {
                 onOpenSearchResultFolder?(item.url)
@@ -731,7 +758,7 @@ public final class BrowserPaneViewController: NSViewController {
     }
 
     private func startAdvancedSearch(recursive: Bool, focusContent: Bool) {
-        guard !model.isSearchResults, !model.isRemote else { return }
+        guard !model.isSearchResults, !model.isRemote, !model.isArchive else { return }
         NotificationCenter.default.post(
             name: .openLiftAdvancedSearch,
             object: self,
@@ -791,6 +818,10 @@ public final class BrowserPaneViewController: NSViewController {
             quickLookRemoteSelection()
             return
         }
+        if model.isArchive {
+            quickLookArchiveSelection()
+            return
+        }
         let urls = selectedItems.map(\.url)
         guard !urls.isEmpty else { return }
         QuickLookController.shared.present(urls)
@@ -836,6 +867,67 @@ public final class BrowserPaneViewController: NSViewController {
         }
     }
 
+    private func archiveCacheURL(for item: FileItem) -> URL {
+        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        let archiveName = (archiveProvider?.archiveURL.lastPathComponent ?? "archive")
+            .replacingOccurrences(of: "/", with: "_")
+        let relative = archiveProvider?.relativePath(for: item.url) ?? item.name
+        var url = base
+            .appendingPathComponent("OpenLift", isDirectory: true)
+            .appendingPathComponent("Archives", isDirectory: true)
+            .appendingPathComponent(archiveName, isDirectory: true)
+        for component in relative.split(separator: "/") {
+            url.appendPathComponent(String(component))
+        }
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        return url
+    }
+
+    private func openArchiveItem(_ item: FileItem) {
+        guard let provider = archiveProvider else { NSSound.beep(); return }
+        let target = archiveCacheURL(for: item)
+        let relative = provider.relativePath(for: item.url)
+        Task { [weak self] in
+            do {
+                if !FileManager.default.fileExists(atPath: target.path) {
+                    try await provider.extract(relative, to: target)
+                }
+                NSWorkspace.shared.open(target)
+            } catch {
+                self?.present(error: error)
+            }
+        }
+    }
+
+    private func quickLookArchiveSelection() {
+        guard let provider = archiveProvider else { NSSound.beep(); return }
+        let files = selectedItems.filter { !$0.isDirectory }
+        guard !files.isEmpty else { NSSound.beep(); return }
+
+        Task { [weak self] in
+            guard let self else { return }
+            var localURLs: [URL] = []
+            for item in files {
+                let target = self.archiveCacheURL(for: item)
+                do {
+                    if !FileManager.default.fileExists(atPath: target.path) {
+                        try await provider.extract(provider.relativePath(for: item.url), to: target)
+                    }
+                    localURLs.append(target)
+                } catch {
+                    self.present(error: error)
+                }
+            }
+            if !localURLs.isEmpty {
+                QuickLookController.shared.present(localURLs)
+            }
+        }
+    }
+
     private func remoteCacheURL(for item: FileItem) -> URL {
         let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
@@ -869,14 +961,14 @@ public final class BrowserPaneViewController: NSViewController {
     }
 
     @objc func openWithApplication(_ sender: Any?) {
-        guard !model.isRemote else { NSSound.beep(); return }
+        guard !model.isRemote, !model.isArchive else { NSSound.beep(); return }
         guard let application = (sender as? NSMenuItem)?.representedObject as? URL,
               let url = focusedItem?.url else { return }
         OpenWithMenu.open(url, with: application)
     }
 
     @objc func chooseOpenWithApplication(_ sender: Any?) {
-        guard !model.isRemote else { NSSound.beep(); return }
+        guard !model.isRemote, !model.isArchive else { NSSound.beep(); return }
         guard let url = focusedItem?.url else { return }
         let panel = NSOpenPanel()
         panel.message = "Choose an application to open “\(url.lastPathComponent)”."
@@ -892,7 +984,7 @@ public final class BrowserPaneViewController: NSViewController {
     }
 
     @objc func openInOtherPane() {
-        guard !model.isRemote else { NSSound.beep(); return }
+        guard !model.isRemote, !model.isArchive else { NSSound.beep(); return }
         guard let item = focusedItem else { return }
         NotificationCenter.default.post(
             name: .openLiftOpenInOtherPane,
@@ -902,7 +994,7 @@ public final class BrowserPaneViewController: NSViewController {
     }
 
     @objc func newFolderAction() {
-        guard !model.isSearchResults else {
+        guard !model.isSearchResults, !model.isArchive else {
             NSSound.beep()
             return
         }
@@ -942,6 +1034,7 @@ public final class BrowserPaneViewController: NSViewController {
     }
 
     @objc func renameAction() {
+        guard !model.isArchive else { NSSound.beep(); return }
         guard let item = focusedItem else { return }
         let alert = NSAlert()
         alert.messageText = "Rename “\(item.name)”"
@@ -975,7 +1068,7 @@ public final class BrowserPaneViewController: NSViewController {
 
     /// Opens the batch rename sheet for the current selection.
     public func performBatchRename() {
-        guard !model.isRemote else { NSSound.beep(); return }
+        guard !model.isRemote, !model.isArchive else { NSSound.beep(); return }
         let urls = selectedItems.map(\.url)
         guard !urls.isEmpty else { return }
 
@@ -1003,7 +1096,7 @@ public final class BrowserPaneViewController: NSViewController {
     }
 
     @objc func duplicateAction() {
-        guard !model.isRemote else { NSSound.beep(); return }
+        guard !model.isRemote, !model.isArchive else { NSSound.beep(); return }
         let provider = LocalFileProvider()
         let items = selectedItems
         guard !items.isEmpty else { return }
@@ -1044,7 +1137,7 @@ public final class BrowserPaneViewController: NSViewController {
 
     /// Compresses the selection into a ZIP next to it.
     public func compressSelection() {
-        guard !model.isRemote else { NSSound.beep(); return }
+        guard !model.isRemote, !model.isArchive else { NSSound.beep(); return }
         let items = selectedItems
         guard !items.isEmpty else { return }
         let sources = items.map(\.url)
@@ -1074,6 +1167,7 @@ public final class BrowserPaneViewController: NSViewController {
     }
 
     @objc func moveToTrashAction() {
+        guard !model.isArchive else { NSSound.beep(); return }
         let items = selectedItems
         guard !items.isEmpty else { return }
 
@@ -1243,18 +1337,64 @@ public final class BrowserPaneViewController: NSViewController {
     }
 
     @objc func revealInFinderAction() {
-        guard !model.isRemote else { NSSound.beep(); return }
+        guard !model.isRemote, !model.isArchive else { NSSound.beep(); return }
         let urls = selectedItems.map(\.url)
         NSWorkspace.shared.activateFileViewerSelecting(urls)
     }
 
     @objc func openInTerminalAction() {
-        guard !model.isRemote else { NSSound.beep(); return }
+        guard !model.isRemote, !model.isArchive else { NSSound.beep(); return }
         let directory = selectedItems.first(where: { $0.isBrowsableDirectory })?.url ?? model.directory
         let terminal = URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app")
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.arguments = []
         NSWorkspace.shared.open([directory], withApplicationAt: terminal, configuration: configuration)
+    }
+
+    /// Extracts the selected archive entries into a local folder.
+    public func extractSelection(to destination: URL) {
+        guard model.isArchive, let provider = archiveProvider else {
+            NSSound.beep()
+            return
+        }
+        let items = selectedItems
+        guard !items.isEmpty else { return }
+
+        let title = items.count == 1
+            ? "Extract “\(items[0].name)”"
+            : "Extract \(items.count) items"
+        let activityID = ActivityLog.shared.begin(title: title, detail: destination.path)
+
+        Task { [weak self] in
+            guard let self else { return }
+            var pairs: [FileOperationRecord.Pair] = []
+            var failures: [String] = []
+            for item in items {
+                let target = FileTransfer.uniqueDestination(
+                    for: destination.appendingPathComponent(item.name)
+                )
+                do {
+                    try await provider.extract(provider.relativePath(for: item.url), to: target)
+                    pairs.append(.init(source: item.url, target: target))
+                } catch {
+                    failures.append("\(item.name): \(error.localizedDescription)")
+                }
+            }
+            if !pairs.isEmpty {
+                self.onOperation?(FileOperationRecord(kind: .copy, pairs: pairs))
+            }
+            ActivityLog.shared.finish(
+                activityID,
+                status: failures.isEmpty ? .completed : .failed,
+                message: failures.first
+            )
+            if let first = failures.first {
+                self.presentMessage(
+                    title: failures.count == 1 ? "An item could not be extracted" : "\(failures.count) items failed",
+                    message: first
+                )
+            }
+        }
     }
 
     /// Downloads the remote selection into a local folder (normally the other
@@ -1358,7 +1498,7 @@ public final class BrowserPaneViewController: NSViewController {
         kind: TransferKind,
         onFinish: ((TransferOutcome) -> Void)? = nil
     ) {
-        guard !model.isRemote else { NSSound.beep(); return }
+        guard !model.isRemote, !model.isArchive else { NSSound.beep(); return }
         let destinationPath = destination.standardizedFileURL.path
         let inPlace = Set(
             sources
@@ -1547,21 +1687,21 @@ public final class BrowserPaneViewController: NSViewController {
     // MARK: - Clipboard
 
     @objc public func copy(_ sender: Any?) {
-        guard !model.isRemote else { NSSound.beep(); return }
+        guard !model.isRemote, !model.isArchive else { NSSound.beep(); return }
         let urls = selectedItems.map(\.url)
         guard !urls.isEmpty else { return }
         FileClipboard.shared.write(urls, mode: .copy)
     }
 
     @objc public func cut(_ sender: Any?) {
-        guard !model.isRemote else { NSSound.beep(); return }
+        guard !model.isRemote, !model.isArchive else { NSSound.beep(); return }
         let urls = selectedItems.map(\.url)
         guard !urls.isEmpty else { return }
         FileClipboard.shared.write(urls, mode: .cut)
     }
 
     @objc public func paste(_ sender: Any?) {
-        guard !model.isSearchResults, !model.isRemote else {
+        guard !model.isSearchResults, !model.isRemote, !model.isArchive else {
             NSSound.beep()
             return
         }
@@ -1807,7 +1947,7 @@ extension BrowserPaneViewController: NSCollectionViewDelegate, NSCollectionViewD
         _ collectionView: NSCollectionView,
         pasteboardWriterForItemAt indexPath: IndexPath
     ) -> NSPasteboardWriting? {
-        guard !model.isRemote else { return nil }
+        guard !model.isRemote, !model.isArchive else { return nil }
         guard indexPath.section < iconSections.count,
               indexPath.item < iconSections[indexPath.section].items.count else { return nil }
         return iconSections[indexPath.section].items[indexPath.item].url as NSURL
@@ -1819,7 +1959,7 @@ extension BrowserPaneViewController: NSCollectionViewDelegate, NSCollectionViewD
         proposedIndexPath proposedDropIndexPath: AutoreleasingUnsafeMutablePointer<NSIndexPath>,
         dropOperation proposedDropOperation: UnsafeMutablePointer<NSCollectionView.DropOperation>
     ) -> NSDragOperation {
-        guard !model.isRemote else { return [] }
+        guard !model.isRemote, !model.isArchive else { return [] }
         return draggingInfo.draggingPasteboard.canReadObject(
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
@@ -1835,7 +1975,7 @@ extension BrowserPaneViewController: NSCollectionViewDelegate, NSCollectionViewD
         guard let urls = draggingInfo.draggingPasteboard.readObjects(
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
-        ) as? [URL], !urls.isEmpty, !model.isRemote else {
+        ) as? [URL], !urls.isEmpty, !model.isRemote, !model.isArchive else {
             return false
         }
         let kind: TransferKind = draggingInfo.draggingSourceOperationMask.contains(.move)
@@ -1952,7 +2092,7 @@ extension BrowserPaneViewController: NSTableViewDataSource, NSTableViewDelegate 
     // MARK: - Drag & drop
 
     public func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
-        guard !model.isRemote else { return nil }
+        guard !model.isRemote, !model.isArchive else { return nil }
         let rows = self.rows
         guard row < rows.count, case .item(let item) = rows[row] else { return nil }
         return item.url as NSURL
@@ -1964,7 +2104,7 @@ extension BrowserPaneViewController: NSTableViewDataSource, NSTableViewDelegate 
         proposedRow row: Int,
         proposedDropOperation dropOperation: NSTableView.DropOperation
     ) -> NSDragOperation {
-        guard !model.isSearchResults, !model.isRemote else { return [] }
+        guard !model.isSearchResults, !model.isRemote, !model.isArchive else { return [] }
         guard info.draggingPasteboard.canReadObject(
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
@@ -1984,7 +2124,7 @@ extension BrowserPaneViewController: NSTableViewDataSource, NSTableViewDelegate 
         guard let urls = info.draggingPasteboard.readObjects(
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
-        ) as? [URL], !urls.isEmpty, !model.isSearchResults, !model.isRemote else {
+        ) as? [URL], !urls.isEmpty, !model.isSearchResults, !model.isRemote, !model.isArchive else {
             return false
         }
 
@@ -2025,7 +2165,7 @@ extension BrowserPaneViewController: NSSearchFieldDelegate {
 
 extension BrowserPaneViewController: NSMenuItemValidation {
     public func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        guard model.isRemote else { return true }
+        guard model.isRemote || model.isArchive else { return true }
         switch menuItem.action {
         case #selector(cut(_:)), #selector(copy(_:)), #selector(paste(_:)),
              #selector(duplicateAction), #selector(batchRenameAction),
@@ -2078,4 +2218,6 @@ public extension Notification.Name {
     /// Opens the advanced search window; `userInfo` carries the root folder,
     /// `recursive` and `focusContent`.
     static let openLiftAdvancedSearch = Notification.Name("openLiftAdvancedSearch")
+    /// Opens a zip/tar archive in a read-only tab; `userInfo["url"]`.
+    static let openLiftOpenArchive = Notification.Name("openLiftOpenArchive")
 }
