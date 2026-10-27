@@ -256,6 +256,8 @@ public final class MainWindowController: NSWindowController {
 
     /// Selector behind each customizable command.
     private static let shortcutSelectors: [ShortcutCommand: Selector] = [
+        .openItem: #selector(openSelection(_:)),
+        .goUp: #selector(goUp(_:)),
         .newFolder: #selector(newFolder(_:)),
         .rename: #selector(renameSelection(_:)),
         .duplicate: #selector(duplicateSelection(_:)),
@@ -1081,8 +1083,19 @@ public final class MainWindowController: NSWindowController {
 // MARK: - Menu validation
 
 extension MainWindowController: NSMenuItemValidation {
+    /// True while a field editor has focus. Menu key equivalents are disabled
+    /// then, so plain Return/Backspace reach the text field instead of opening
+    /// a folder or navigating up.
+    private var isEditingText: Bool {
+        window?.firstResponder is NSTextView
+    }
+
     public func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
+        case #selector(openSelection(_:)):
+            return !isEditingText && !activePane.selectedItems.isEmpty
+        case #selector(goUp(_:)):
+            return !isEditingText && !activePane.model.isSearchResults && activePane.model.canGoUp
         case #selector(undo(_:)):
             menuItem.title = history.undoTitle
             return history.canUndo

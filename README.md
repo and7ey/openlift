@@ -92,7 +92,7 @@ Release builds compile the bridge out.
 The runner covers ordering/grouping, favorites persistence, per-folder view
 settings, tab-aware window state, the local provider (listing, hidden files,
 move, create, delete), file transfers, undo records, the activity log, search,
-archives, advanced search, batch rename, archive browsing, Git status/actions, themes, cloud drives, folder compare/sync, remote listings/bookmarks, WebDAV listings, app settings and shortcuts — 245 checks, all
+archives, advanced search, batch rename, archive browsing, Git status/actions, themes, cloud drives, folder compare/sync, remote listings/bookmarks, WebDAV listings, app settings and shortcuts — 249 checks, all
 dependency-free. When Xcode is
 available, `Tests/OpenLiftTests/OpenLiftTests.swift` can be re-enabled as a
 `swift-testing` target in `Package.swift`.
@@ -271,6 +271,8 @@ See [`docs/spec/mvp.md`](docs/spec/mvp.md) for the full MVP specification and
 | Upload to Other Pane | ⌥⌘U |
 | Compare Folders | ⇧⌘C |
 | Open Archive | ⌥⌘O |
+| Open (Commander preset) | Enter |
+| Enclosing Folder (Commander preset) | Backspace |
 | Git Commit | ⌥⌘K |
 | Git Stage Selection | ⌥⌘S |
 | Git Unstage Selection | ⇧⌥⌘S |
@@ -286,7 +288,9 @@ Settings → Keyboard Shortcuts… offers two presets:
 - **OpenLift Default** — the Command-key layout above.
 - **Classic Commander** — classic two-pane function keys: F2 refresh, F3 view,
   F5 copy, F6 move, ⇧F6 rename, F7 new folder, F8 delete, F12 activity; ⌃U
-  swaps panes and ⌥F7 opens advanced search.
+  swaps panes and ⌥F7 opens advanced search. Enter opens the selected folder
+  or file, and Backspace goes to the enclosing folder. Both are customizable
+  in Settings ▸ Keyboard Shortcuts like every other command.
 
 Individual commands can be re-recorded after choosing a preset. Switching
 presets replaces the custom keys, and the choice is remembered between runs.

@@ -1214,6 +1214,23 @@ do {
         "classic delete is F8"
     )
     check(ShortcutKey.isFunctionKey(ShortcutKey.f5), "function-key spellings are recognized")
+    check(
+        presetStore.shortcut(for: .openItem) == KeyboardShortcut(key: ShortcutKey.returnKey, modifiers: []),
+        "classic Enter opens the selection"
+    )
+    check(
+        presetStore.shortcut(for: .goUp) == KeyboardShortcut(key: ShortcutKey.backspace, modifiers: []),
+        "classic Backspace goes to the enclosing folder"
+    )
+    check(
+        ShortcutCommand.openItem.defaultShortcut == KeyboardShortcut(key: "o", modifiers: [.command]),
+        "the standard preset keeps Command-O for open"
+    )
+    check(
+        ShortcutCommand.goUp.defaultShortcut
+            == KeyboardShortcut(key: ShortcutKey.upArrow, modifiers: [.command]),
+        "the standard preset keeps Command-Up for the enclosing folder"
+    )
 
     let classicShortcuts = ShortcutCommand.allCases.compactMap { $0.shortcut(in: .classicCommander) }
     check(Set(classicShortcuts).count == classicShortcuts.count, "classic shortcuts are unique")

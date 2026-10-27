@@ -30,6 +30,9 @@ public struct KeyboardShortcut: Codable, Hashable, Sendable {
 
 /// Function-key spellings accepted by `NSMenuItem.keyEquivalent`.
 public enum ShortcutKey {
+    public static let returnKey = "\r"
+    public static let backspace = "\u{8}"
+    public static let upArrow = "\u{F700}"
     public static let f1 = "\u{F704}"
     public static let f2 = "\u{F705}"
     public static let f3 = "\u{F706}"
@@ -77,6 +80,8 @@ public enum ShortcutPreset: String, CaseIterable, Codable, Sendable {
 
 /// Commands whose shortcuts can be customized.
 public enum ShortcutCommand: String, CaseIterable, Codable, Sendable {
+    case openItem
+    case goUp
     case newFolder
     case rename
     case duplicate
@@ -95,6 +100,8 @@ public enum ShortcutCommand: String, CaseIterable, Codable, Sendable {
 
     public var title: String {
         switch self {
+        case .openItem: return "Open"
+        case .goUp: return "Enclosing Folder"
         case .newFolder: return "New Folder"
         case .rename: return "Rename"
         case .duplicate: return "Duplicate"
@@ -115,6 +122,10 @@ public enum ShortcutCommand: String, CaseIterable, Codable, Sendable {
 
     public var defaultShortcut: KeyboardShortcut? {
         switch self {
+        case .openItem:
+            return KeyboardShortcut(key: "o", modifiers: [.command])
+        case .goUp:
+            return KeyboardShortcut(key: ShortcutKey.upArrow, modifiers: [.command])
         case .newFolder:
             return KeyboardShortcut(key: "n", modifiers: [.command, .shift])
         case .rename:
@@ -161,6 +172,10 @@ public enum ShortcutCommand: String, CaseIterable, Codable, Sendable {
     /// Function-key layout modelled on classic two-pane commanders.
     private var classicCommanderShortcut: KeyboardShortcut? {
         switch self {
+        case .openItem:
+            return KeyboardShortcut(key: ShortcutKey.returnKey, modifiers: [])
+        case .goUp:
+            return KeyboardShortcut(key: ShortcutKey.backspace, modifiers: [])
         case .newFolder:
             return KeyboardShortcut(key: ShortcutKey.f7, modifiers: [])
         case .rename:
