@@ -11,3 +11,6 @@ build/
 *.xcworkspace
 xcuserdata/
 DerivedData/
+
+# Local clean-room research notes (not published)
+docs/research/
