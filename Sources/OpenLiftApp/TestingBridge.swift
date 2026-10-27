@@ -109,6 +109,7 @@ final class TestingBridge: NSObject {
                 port: port,
                 username: info["user"] as? String ?? "",
                 password: info["password"] as? String ?? "",
+                identityFile: info["key"] as? String,
                 path: info["path"] as? String ?? "/"
             )
             controller.testOpenRemote(connection)

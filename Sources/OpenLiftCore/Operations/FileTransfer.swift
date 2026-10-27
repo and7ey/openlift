@@ -73,6 +73,9 @@ public struct FileTransfer: Sendable {
 
     /// Returns a non-existing `name copy`, `name copy 2`, … URL next to `url`.
     public static func uniqueDestination(for url: URL) -> URL {
+        if !FileManager.default.fileExists(atPath: url.path) {
+            return url
+        }
         let directory = url.deletingLastPathComponent()
         let base = url.deletingPathExtension().lastPathComponent
         let ext = url.pathExtension

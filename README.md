@@ -30,7 +30,7 @@ Early development. The local-file MVP is in progress:
 | Undo / redo (copy/move/rename/trash/new folder) | done |
 | Activity window (live progress, session log) | done |
 | Quick Look, Get Info, Open With | done |
-| Remote: SFTP/FTP/WebDAV browsing, transfers, mutations, bookmarks | done (FTPS live check pending) |
+| Remote: SFTP/FTP/WebDAV browsing, transfers, mutations, bookmarks, SSH keys | done |
 | Cloud Drives: iCloud, Dropbox, Google Drive, OneDrive, Box folders | done via desktop clients |
 | Folder compare and copy sync | done (copy-only) |
 | Archive browsing (zip/tar, extract) | done |
@@ -205,15 +205,19 @@ Design notes:
 - Remote tabs are session-only. WebDAV/WebDAVS use URLSession with PROPFIND
   listings and GET/PUT/MKCOL/MOVE/COPY/DELETE; Basic auth stays in request
   headers and is never persisted. SFTP is driven through the system `sftp`
-  binary inside a pseudo-terminal (password or SSH agent); FTP/FTPS use
+  binary inside a pseudo-terminal (password, SSH agent or a chosen `-i` key
+  file; the key path, never its contents, can be saved in a bookmark); FTP/FTPS use
   `curl` with credentials passed on stdin, never in argv. Passwords are not
   persisted; saved servers live in Go ▸ Servers and never include credentials.
   Remote panes support browsing, navigation, refresh, Quick Look (download
   cache), Download to Other Pane, Upload to Other Pane, new folder, rename and
   permanent delete (remote mutations are not undoable). Clipboard operations,
   batch rename, compress, advanced search and drag & drop stay local-only.
-  FTPS is implemented with explicit TLS but has not yet been verified against
-  a live FTPS server.
+  FTPS was verified against `test.rebex.net` (listing and download). That
+  server requires TLS session resumption for data connections, which curl's
+  macOS SecureTransport backend cannot do on TLS 1.3, so an FTPS command that
+  fails with a data-connection/TLS error is retried once with `tls-max=1.2`;
+  plain TLS 1.3 is still used whenever the server allows it.
 - Batch rename builds a plan first: template tokens (`{name}`, `{ext}`,
   `{n}`/`{nn}`, `{date}`), find/replace, numbering and a live old/new/status
   preview. Conflicts with existing or duplicate names block Apply. Execution

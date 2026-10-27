@@ -68,7 +68,8 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned
   - [x] New folder, rename and permanent delete on remote panes
   - [x] Remembered server bookmarks (Go ▸ Servers, no passwords)
   - [x] Remote listing parser (UNIX `ls -l` output from SFTP and FTP)
-  - [ ] Live FTPS verification and SSH key-file picker
+  - [x] SSH key-file picker for SFTP
+  - [x] Live FTPS verification against test.rebex.net (TLS 1.2 fallback for session resumption)
 - [x] WebDAV (PROPFIND listing; GET/PUT/MKCOL/MOVE/COPY/DELETE)
 - [ ] S3 / Backblaze B2
 - [x] Cloud drives via installed desktop sync folders (iCloud, Dropbox, Drive, OneDrive, Box)

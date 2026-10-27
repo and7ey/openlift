@@ -46,6 +46,8 @@ public struct RemoteConnection: Sendable, Equatable {
     public var port: Int
     public var username: String
     public var password: String
+    /// Optional private key passed to `sftp -i`; SFTP only.
+    public var identityFile: String?
     public var path: String
 
     public init(
@@ -54,6 +56,7 @@ public struct RemoteConnection: Sendable, Equatable {
         port: Int? = nil,
         username: String = "",
         password: String = "",
+        identityFile: String? = nil,
         path: String = "/"
     ) {
         self.proto = proto
@@ -61,6 +64,7 @@ public struct RemoteConnection: Sendable, Equatable {
         self.port = port ?? proto.defaultPort
         self.username = username
         self.password = password
+        self.identityFile = identityFile
         self.path = path
     }
 
@@ -351,6 +355,10 @@ public struct SFTPRemoteProvider: FileProvider, RemoteFileTransferring {
             "-oConnectTimeout=20",
             "-oNumberOfPasswordPrompts=1"
         ]
+        if let identityFile = connection.identityFile, !identityFile.isEmpty {
+            sftpArguments.append("-i")
+            sftpArguments.append((identityFile as NSString).expandingTildeInPath)
+        }
         if connection.password.isEmpty {
             sftpArguments.append("-oBatchMode=yes")
             sftpArguments.append("-oPreferredAuthentications=publickey")
@@ -688,6 +696,27 @@ public struct FTPRemoteProvider: FileProvider, RemoteFileTransferring {
     }
 
     private func runSync(url: String, extra: [String]) throws -> String {
+        let first = try execute(url: url, extra: extra, tlsMax: nil)
+        if first.status == 0 {
+            return first.text
+        }
+        // TLS 1.3 session resumption is not implemented by curl's macOS
+        // SecureTransport backend, and servers such as vsftpd/Rebex refuse a
+        // data connection without it. Retry on TLS 1.2, where resumption works.
+        if connection.proto.isTLS,
+           first.text.contains("425")
+            || first.text.contains("curl: (18)")
+            || first.text.lowercased().contains("session resumption required") {
+            let retry = try execute(url: url, extra: extra, tlsMax: "1.2")
+            if retry.status == 0 {
+                return retry.text
+            }
+            throw FileProviderError.ioFailure(connection.rootURL, underlying: retry.text)
+        }
+        throw FileProviderError.ioFailure(connection.rootURL, underlying: first.text)
+    }
+
+    private func execute(url: String, extra: [String], tlsMax: String?) throws -> (status: Int32, text: String) {
         var config = [
             "silent",
             "show-error",
@@ -700,6 +729,9 @@ public struct FTPRemoteProvider: FileProvider, RemoteFileTransferring {
         }
         if connection.proto.isTLS {
             config.append("ssl-reqd")
+            if let tlsMax {
+                config.append("tls-max = \"\(tlsMax)\"")
+            }
         }
         config.append(contentsOf: extra)
 
@@ -722,12 +754,7 @@ public struct FTPRemoteProvider: FileProvider, RemoteFileTransferring {
         try? input.fileHandleForWriting.close()
         let data = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
-        let text = String(decoding: data, as: UTF8.self)
-
-        if process.terminationStatus != 0 {
-            throw FileProviderError.ioFailure(connection.rootURL, underlying: text)
-        }
-        return text
+        return (process.terminationStatus, String(decoding: data, as: UTF8.self))
     }
 
     private func escapeConfig(_ value: String) -> String {

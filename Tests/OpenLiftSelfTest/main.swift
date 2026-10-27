@@ -730,6 +730,24 @@ do {
     check(store.load().count == 1, "bookmarks can be removed")
     store.removeAll()
     check(store.load().isEmpty, "all bookmarks can be forgotten")
+
+    let sftp = RemoteConnection(
+        proto: .sftp,
+        host: "sftp.example.com",
+        username: "demo",
+        identityFile: "~/.ssh/id_ed25519"
+    )
+    check(sftp.identityFile == "~/.ssh/id_ed25519", "connections carry an SSH key path")
+    let sftpBookmark = RemoteBookmark(connection: sftp)
+    check(sftpBookmark.identityFile == "~/.ssh/id_ed25519", "bookmarks keep the SSH key path")
+    check(sftpBookmark.connection.identityFile == "~/.ssh/id_ed25519", "bookmarks restore the SSH key path")
+    check(sftpBookmark.connection.password.isEmpty, "restored connections still omit passwords")
+
+    let legacy = #"[{"id":"8E2F0A1C-6B3D-4A3F-9C2E-6D0B1A5E7C11","name":"Old","proto":"sftp","host":"h","port":22,"username":"u","path":"/"}]"#
+    check(
+        (try? JSONDecoder().decode([RemoteBookmark].self, from: Data(legacy.utf8)))?.first?.identityFile == nil,
+        "older bookmarks without a key path still decode"
+    )
 }
 
 // MARK: - Folder comparison and sync
@@ -971,6 +989,21 @@ do {
 } catch {
     failures += 1
     print("FAIL git integration: \(error)")
+}
+
+// MARK: - Unique destinations
+
+do {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("report.txt")
+    try Data("one".utf8).write(to: file)
+
+    let free = root.appendingPathComponent("fresh.txt")
+    check(FileTransfer.uniqueDestination(for: free) == free, "a free name is kept as is")
+    check(FileTransfer.uniqueDestination(for: file).lastPathComponent == "report copy.txt", "an existing name becomes a copy")
+    try Data("two".utf8).write(to: root.appendingPathComponent("report copy.txt"))
+    check(FileTransfer.uniqueDestination(for: file).lastPathComponent == "report copy 2.txt", "later copies are numbered")
 }
 
 // MARK: - Undo records

@@ -14,6 +14,9 @@ public final class RemoteConnectionWindowController: NSWindowController {
     private let portField = NSTextField()
     private let userField = NSTextField()
     private let passwordField = NSSecureTextField()
+    private let identityField = NSTextField()
+    private let identityButton = NSButton(title: "Choose…", target: nil, action: nil)
+    private let identityRow = NSStackView()
     private let pathField = NSTextField()
     private let hintLabel = NSTextField(wrappingLabelWithString: "")
     private let saveBookmarkButton = NSButton(
@@ -27,7 +30,7 @@ public final class RemoteConnectionWindowController: NSWindowController {
 
     public init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 500, height: 360),
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 392),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -54,6 +57,7 @@ public final class RemoteConnectionWindowController: NSWindowController {
         portField.stringValue = "\(prefill?.port ?? proto.defaultPort)"
         userField.stringValue = prefill?.username ?? ""
         passwordField.stringValue = ""
+        identityField.stringValue = prefill?.identityFile ?? ""
         pathField.stringValue = prefill?.path ?? "/"
         saveBookmarkButton.state = .off
         lastDefaultPort = proto.defaultPort
@@ -92,6 +96,15 @@ public final class RemoteConnectionWindowController: NSWindowController {
         passwordField.placeholderString = "password (empty = SSH agent/keys)"
         passwordField.widthAnchor.constraint(equalToConstant: 260).isActive = true
 
+        identityField.placeholderString = "~/.ssh/id_ed25519 (optional)"
+        identityField.delegate = self
+        identityField.widthAnchor.constraint(equalToConstant: 220).isActive = true
+
+        identityButton.target = self
+        identityButton.action = #selector(chooseIdentityFile(_:))
+        identityButton.bezelStyle = .rounded
+        identityButton.controlSize = .small
+
         pathField.placeholderString = "initial path"
         pathField.stringValue = "/"
         pathField.widthAnchor.constraint(equalToConstant: 260).isActive = true
@@ -103,9 +116,13 @@ public final class RemoteConnectionWindowController: NSWindowController {
         let hostRow = NSStackView(views: [label("Host:"), hostField])
         let userRow = NSStackView(views: [label("User:"), userField])
         let passwordRow = NSStackView(views: [label("Password:"), passwordField])
+        identityRow.setViews([label("Key:"), identityField, identityButton], in: .leading)
+        identityRow.orientation = .horizontal
+        identityRow.spacing = 8
+        identityRow.alignment = .centerY
         let pathRow = NSStackView(views: [label("Path:"), pathField])
 
-        for row in [protocolRow, hostRow, userRow, passwordRow, pathRow] {
+        for row in [protocolRow, hostRow, userRow, passwordRow, identityRow, pathRow] {
             row.orientation = .horizontal
             row.spacing = 8
             row.alignment = .centerY
@@ -134,6 +151,7 @@ public final class RemoteConnectionWindowController: NSWindowController {
             hostRow,
             userRow,
             passwordRow,
+            identityRow,
             pathRow,
             saveBookmarkButton,
             hintLabel
@@ -205,14 +223,34 @@ public final class RemoteConnectionWindowController: NSWindowController {
             port: port,
             username: userField.stringValue,
             password: passwordField.stringValue,
+            identityFile: identityField.stringValue
+                .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? nil
+                : identityField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines),
             path: path
         )
     }
 
+    @objc private func chooseIdentityFile(_ sender: Any?) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.showsHiddenFiles = true
+        panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".ssh", isDirectory: true)
+        panel.prompt = "Use Key"
+        let response = panel.runModal()
+        guard response == .OK, let url = panel.url else { return }
+        identityField.stringValue = (url.path as NSString).abbreviatingWithTildeInPath
+        updateConnectState()
+    }
+
     private func updateHint() {
+        identityRow.isHidden = selectedProtocol != .sftp
         switch selectedProtocol {
         case .sftp:
-            hintLabel.stringValue = "SFTP uses SSH. Leave the password empty to use the SSH agent or keys. The host key is trusted on first use."
+            hintLabel.stringValue = "SFTP uses SSH. Leave the password empty to use the SSH agent, or choose a private key file. The host key is trusted on first use."
         case .ftp, .ftps:
             hintLabel.stringValue = "FTP/FTPS credentials are used for this session only and are not saved."
         case .webdav, .webdavs:
@@ -222,6 +260,8 @@ public final class RemoteConnectionWindowController: NSWindowController {
 
     private func updateConnectState() {
         connectButton.isEnabled = connection != nil
+        identityField.isEnabled = selectedProtocol == .sftp
+        identityButton.isEnabled = selectedProtocol == .sftp
     }
 
     private func dismiss() {

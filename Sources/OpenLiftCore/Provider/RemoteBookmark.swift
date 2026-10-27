@@ -9,6 +9,8 @@ public struct RemoteBookmark: Codable, Sendable, Equatable, Identifiable {
     public var port: Int
     public var username: String
     public var path: String
+    /// SSH key used by SFTP. A file path, never a secret.
+    public var identityFile: String?
 
     public init(
         id: UUID = UUID(),
@@ -17,7 +19,8 @@ public struct RemoteBookmark: Codable, Sendable, Equatable, Identifiable {
         host: String,
         port: Int,
         username: String,
-        path: String
+        path: String,
+        identityFile: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -26,6 +29,7 @@ public struct RemoteBookmark: Codable, Sendable, Equatable, Identifiable {
         self.port = port
         self.username = username
         self.path = path
+        self.identityFile = identityFile
     }
 
     public init(connection: RemoteConnection) {
@@ -38,7 +42,8 @@ public struct RemoteBookmark: Codable, Sendable, Equatable, Identifiable {
             host: connection.host,
             port: connection.port,
             username: connection.username,
-            path: connection.path
+            path: connection.path,
+            identityFile: connection.identityFile
         )
     }
 
@@ -51,6 +56,7 @@ public struct RemoteBookmark: Codable, Sendable, Equatable, Identifiable {
             port: port,
             username: username,
             password: "",
+            identityFile: identityFile,
             path: path
         )
     }
