@@ -72,6 +72,12 @@ public struct LocalFileProvider: FileProvider {
         return item
     }
 
+    /// Synchronous metadata snapshot for callers that already have a URL
+    /// (search results, drag previews) and do not want a task hop per item.
+    public func item(at url: URL) -> FileItem? {
+        Self.makeItem(from: url)
+    }
+
     public func createDirectory(at url: URL) async throws {
         do {
             try manager.createDirectory(at: url, withIntermediateDirectories: false)

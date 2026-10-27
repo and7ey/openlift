@@ -142,6 +142,25 @@ do {
     print("FAIL operations: \(error)")
 }
 
+func collectSearch(
+    _ criteria: SearchCriteria,
+    cancellation: CancellationToken = CancellationToken()
+) async -> (items: [FileItem], summary: SearchSummary?) {
+    var items: [FileItem] = []
+    var summary: SearchSummary?
+    for await event in SearchEngine().search(criteria, cancellation: cancellation) {
+        switch event {
+        case .batch(let batch):
+            items.append(contentsOf: batch)
+        case .finished(let result):
+            summary = result
+        case .progress:
+            break
+        }
+    }
+    return (items, summary)
+}
+
 // MARK: - Transfers
 
 do {
@@ -327,6 +346,88 @@ do {
 } catch {
     failures += 1
     print("FAIL search/archives: \(error)")
+}
+
+// MARK: - Advanced search
+
+do {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let folder = root.appendingPathComponent("folder", isDirectory: true)
+    let sub = folder.appendingPathComponent("sub", isDirectory: true)
+    let empty = root.appendingPathComponent("empty", isDirectory: true)
+    for directory in [folder, sub, empty] {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+    try Data("needle in alpha".utf8).write(to: root.appendingPathComponent("alpha.txt"))
+    try Data("other".utf8).write(to: root.appendingPathComponent("beta.md"))
+    try Data("needle in gamma".utf8).write(to: folder.appendingPathComponent("gamma.txt"))
+    try Data("delta".utf8).write(to: sub.appendingPathComponent("delta.txt"))
+    try Data("needle hidden".utf8).write(to: root.appendingPathComponent(".hidden.txt"))
+
+    // Single-level name search.
+    var criteria = SearchCriteria(root: root, nameContains: "alpha", recursive: false)
+    var outcome = await collectSearch(criteria)
+    check(outcome.items.map(\.url.lastPathComponent) == ["alpha.txt"], "search finds a file by name in one level")
+    check(outcome.summary?.matched == 1, "search summary counts matches")
+
+    // Recursive content search skips hidden files by default.
+    criteria = SearchCriteria(root: root, contentContains: "needle", recursive: true)
+    outcome = await collectSearch(criteria)
+    check(Set(outcome.items.map(\.url.lastPathComponent)) == ["alpha.txt", "gamma.txt"], "content search covers subfolders")
+    check(!outcome.items.contains { $0.name == ".hidden.txt" }, "content search skips hidden files by default")
+
+    // Including hidden finds the hidden file too.
+    criteria.includeHidden = true
+    outcome = await collectSearch(criteria)
+    check(outcome.items.contains { $0.name == ".hidden.txt" }, "content search can include hidden files")
+
+    // Single-level content search must not descend.
+    criteria = SearchCriteria(root: root, contentContains: "needle", recursive: false)
+    outcome = await collectSearch(criteria)
+    check(outcome.items.map(\.url.lastPathComponent) == ["alpha.txt"], "single-level content search stays in the folder")
+
+    // Folders-only search.
+    criteria = SearchCriteria(root: root, recursive: true, itemType: .folders)
+    outcome = await collectSearch(criteria)
+    check(outcome.items.allSatisfy(\.isDirectory), "folders-only search returns directories")
+    check(Set(outcome.items.map(\.url.lastPathComponent)) == ["folder", "sub", "empty"], "folders-only search walks the tree")
+
+    // Extension filter.
+    criteria = SearchCriteria(root: root, recursive: true, extensions: ["md"])
+    outcome = await collectSearch(criteria)
+    check(outcome.items.map(\.url.lastPathComponent) == ["beta.md"], "extension filter limits results")
+
+    // Result cap.
+    criteria = SearchCriteria(root: root, recursive: true, maxResults: 1)
+    outcome = await collectSearch(criteria)
+    check(outcome.items.count == 1 && outcome.summary?.truncated == true, "search stops at the result limit")
+
+    // Cancellation before the scan starts.
+    let token = CancellationToken()
+    token.cancel()
+    outcome = await collectSearch(
+        SearchCriteria(root: root, recursive: true),
+        cancellation: token
+    )
+    check(outcome.summary?.cancelled == true, "search reports cancellation")
+    check(outcome.items.isEmpty, "cancelled search returns no items")
+
+    // Search results provider drops entries that disappeared since the search.
+    let providerFiles = [
+        root.appendingPathComponent("alpha.txt"),
+        root.appendingPathComponent("beta.md")
+    ]
+    let providerItems = providerFiles.compactMap { LocalFileProvider().item(at: $0) }
+    let provider = SearchResultsProvider(items: providerItems)
+    var listed = try await provider.list(root, options: ListOptions(showHidden: false))
+    check(listed.count == 2, "results provider lists the captured items")
+    try FileManager.default.removeItem(at: providerFiles[0])
+    listed = try await provider.list(root, options: ListOptions(showHidden: false))
+    check(listed.count == 1, "results provider drops removed items on reload")
+} catch {
+    failures += 1
+    print("FAIL advanced search: \(error)")
 }
 
 // MARK: - Undo records

@@ -95,6 +95,11 @@ public final class BrowserModel {
         groupCache = nil
     }
 
+    /// True when this pane shows a fixed search-result set instead of a folder.
+    public var isSearchResults: Bool {
+        provider.identifier == SearchResultsProvider.identifierValue
+    }
+
     public var canGoBack: Bool { !backStack.isEmpty }
     public var canGoForward: Bool { !forwardStack.isEmpty }
     public var canGoUp: Bool { directory.path != "/" }
@@ -222,6 +227,10 @@ public final class BrowserModel {
 
     /// Keeps a single FSEvents stream pointed at the current directory.
     private func ensureWatcher() {
+        guard directory.isFileURL else {
+            watcher?.stop()
+            return
+        }
         if watcher == nil {
             watcher = DirectoryWatcher { [weak self] in
                 Task { @MainActor [weak self] in
