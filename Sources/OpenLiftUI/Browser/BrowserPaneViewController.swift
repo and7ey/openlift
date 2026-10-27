@@ -22,6 +22,7 @@ public final class BrowserPaneViewController: NSViewController {
     public var onOperation: ((FileOperationRecord) -> Void)?
 
     private let pathControl = NSPathControl()
+    private let remotePathLabel = NSTextField(labelWithString: "")
     private let searchOptionsButton = NSButton()
     private var pathHeight: NSLayoutConstraint?
     private let tableView = ActivatingTableView()
@@ -44,6 +45,9 @@ public final class BrowserPaneViewController: NSViewController {
 
     private var batchRenameController: BatchRenameWindowController?
     private var iconCache: [String: NSImage] = [:]
+    private var remoteTransfer: RemoteFileTransferring? {
+        model.fileProvider as? RemoteFileTransferring
+    }
     /// Selection is remembered by URL so grouping/refresh re-selection is stable.
     private var selectedURLCache: Set<URL> = []
     /// Sorted rows and icon sections are built once per model change; building
@@ -77,6 +81,7 @@ public final class BrowserPaneViewController: NSViewController {
         configureStatusBar()
 
         container.addSubview(pathControl)
+        container.addSubview(remotePathLabel)
         container.addSubview(searchOptionsButton)
         container.addSubview(searchField)
         container.addSubview(scrollView)
@@ -98,6 +103,10 @@ public final class BrowserPaneViewController: NSViewController {
             pathControl.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
             pathControl.trailingAnchor.constraint(equalTo: searchOptionsButton.leadingAnchor, constant: -6),
             pathHeight,
+
+            remotePathLabel.leadingAnchor.constraint(equalTo: pathControl.leadingAnchor),
+            remotePathLabel.trailingAnchor.constraint(equalTo: searchOptionsButton.leadingAnchor, constant: -6),
+            remotePathLabel.centerYAnchor.constraint(equalTo: pathControl.centerYAnchor),
 
             searchOptionsButton.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
             searchOptionsButton.centerYAnchor.constraint(equalTo: pathControl.centerYAnchor),
@@ -167,6 +176,12 @@ public final class BrowserPaneViewController: NSViewController {
         pathControl.action = #selector(pathControlClicked(_:))
         pathControl.translatesAutoresizingMaskIntoConstraints = false
         pathControl.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        remotePathLabel.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        remotePathLabel.textColor = .secondaryLabelColor
+        remotePathLabel.lineBreakMode = .byTruncatingMiddle
+        remotePathLabel.isHidden = true
+        remotePathLabel.translatesAutoresizingMaskIntoConstraints = false
     }
 
     private func configureSearchOptionsButton() {
@@ -378,9 +393,14 @@ public final class BrowserPaneViewController: NSViewController {
     private func reloadView() {
         let resultsMode = model.isSearchResults
         pathHeight?.constant = resultsMode ? 0 : 24
-        pathControl.isHidden = resultsMode
-        searchOptionsButton.isHidden = resultsMode
-        if !resultsMode {
+        pathControl.isHidden = resultsMode || model.isRemote
+        remotePathLabel.isHidden = !model.isRemote
+        if model.isRemote {
+            remotePathLabel.stringValue = model.directory.absoluteString
+            remotePathLabel.toolTip = model.directory.absoluteString
+        }
+        searchOptionsButton.isHidden = resultsMode || model.isRemote
+        if !resultsMode, !model.isRemote {
             pathControl.url = model.directory
         }
         tableView.tableColumn(withIdentifier: NSUserInterfaceItemIdentifier("path"))?.isHidden = !resultsMode
@@ -631,6 +651,14 @@ public final class BrowserPaneViewController: NSViewController {
 
     @objc public func openSelection() {
         guard let item = focusedItem else { return }
+        if model.isRemote {
+            if item.isBrowsableDirectory {
+                model.navigate(to: item.url)
+            } else {
+                openRemoteItem(item)
+            }
+            return
+        }
         if item.isBrowsableDirectory {
             if model.isSearchResults {
                 onOpenSearchResultFolder?(item.url)
@@ -703,7 +731,7 @@ public final class BrowserPaneViewController: NSViewController {
     }
 
     private func startAdvancedSearch(recursive: Bool, focusContent: Bool) {
-        guard !model.isSearchResults else { return }
+        guard !model.isSearchResults, !model.isRemote else { return }
         NotificationCenter.default.post(
             name: .openLiftAdvancedSearch,
             object: self,
@@ -759,9 +787,71 @@ public final class BrowserPaneViewController: NSViewController {
 
     /// Shows (or dismisses) Quick Look for the current selection.
     public func performQuickLook() {
+        if model.isRemote {
+            quickLookRemoteSelection()
+            return
+        }
         let urls = selectedItems.map(\.url)
         guard !urls.isEmpty else { return }
         QuickLookController.shared.present(urls)
+    }
+
+    private func openRemoteItem(_ item: FileItem) {
+        guard let transfer = remoteTransfer else { NSSound.beep(); return }
+        let target = remoteCacheURL(for: item)
+        Task { [weak self] in
+            do {
+                if !FileManager.default.fileExists(atPath: target.path) {
+                    try await transfer.download(item.url, to: target)
+                }
+                NSWorkspace.shared.open(target)
+            } catch {
+                self?.present(error: error)
+            }
+        }
+    }
+
+    private func quickLookRemoteSelection() {
+        guard let transfer = remoteTransfer else { NSSound.beep(); return }
+        let files = selectedItems.filter { !$0.isDirectory }
+        guard !files.isEmpty else { NSSound.beep(); return }
+
+        Task { [weak self] in
+            guard let self else { return }
+            var localURLs: [URL] = []
+            for item in files {
+                let target = self.remoteCacheURL(for: item)
+                do {
+                    if !FileManager.default.fileExists(atPath: target.path) {
+                        try await transfer.download(item.url, to: target)
+                    }
+                    localURLs.append(target)
+                } catch {
+                    self.present(error: error)
+                }
+            }
+            if !localURLs.isEmpty {
+                QuickLookController.shared.present(localURLs)
+            }
+        }
+    }
+
+    private func remoteCacheURL(for item: FileItem) -> URL {
+        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        let host = (model.directory.host ?? "remote").replacingOccurrences(of: "/", with: "_")
+        var url = base
+            .appendingPathComponent("OpenLift", isDirectory: true)
+            .appendingPathComponent("Remote", isDirectory: true)
+            .appendingPathComponent(host, isDirectory: true)
+        for component in item.url.pathComponents where component != "/" && component != "." && component != ".." {
+            url.appendPathComponent(component)
+        }
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        return url
     }
 
     @objc func quickLookAction() {
@@ -779,12 +869,14 @@ public final class BrowserPaneViewController: NSViewController {
     }
 
     @objc func openWithApplication(_ sender: Any?) {
+        guard !model.isRemote else { NSSound.beep(); return }
         guard let application = (sender as? NSMenuItem)?.representedObject as? URL,
               let url = focusedItem?.url else { return }
         OpenWithMenu.open(url, with: application)
     }
 
     @objc func chooseOpenWithApplication(_ sender: Any?) {
+        guard !model.isRemote else { NSSound.beep(); return }
         guard let url = focusedItem?.url else { return }
         let panel = NSOpenPanel()
         panel.message = "Choose an application to open “\(url.lastPathComponent)”."
@@ -800,6 +892,7 @@ public final class BrowserPaneViewController: NSViewController {
     }
 
     @objc func openInOtherPane() {
+        guard !model.isRemote else { NSSound.beep(); return }
         guard let item = focusedItem else { return }
         NotificationCenter.default.post(
             name: .openLiftOpenInOtherPane,
@@ -809,7 +902,7 @@ public final class BrowserPaneViewController: NSViewController {
     }
 
     @objc func newFolderAction() {
-        guard !model.isSearchResults else {
+        guard !model.isSearchResults, !model.isRemote else {
             NSSound.beep()
             return
         }
@@ -846,6 +939,7 @@ public final class BrowserPaneViewController: NSViewController {
     }
 
     @objc func renameAction() {
+        guard !model.isRemote else { NSSound.beep(); return }
         guard let item = focusedItem else { return }
         let alert = NSAlert()
         alert.messageText = "Rename “\(item.name)”"
@@ -876,6 +970,7 @@ public final class BrowserPaneViewController: NSViewController {
 
     /// Opens the batch rename sheet for the current selection.
     public func performBatchRename() {
+        guard !model.isRemote else { NSSound.beep(); return }
         let urls = selectedItems.map(\.url)
         guard !urls.isEmpty else { return }
 
@@ -903,6 +998,7 @@ public final class BrowserPaneViewController: NSViewController {
     }
 
     @objc func duplicateAction() {
+        guard !model.isRemote else { NSSound.beep(); return }
         let provider = LocalFileProvider()
         let items = selectedItems
         guard !items.isEmpty else { return }
@@ -943,6 +1039,7 @@ public final class BrowserPaneViewController: NSViewController {
 
     /// Compresses the selection into a ZIP next to it.
     public func compressSelection() {
+        guard !model.isRemote else { NSSound.beep(); return }
         let items = selectedItems
         guard !items.isEmpty else { return }
         let sources = items.map(\.url)
@@ -972,6 +1069,7 @@ public final class BrowserPaneViewController: NSViewController {
     }
 
     @objc func moveToTrashAction() {
+        guard !model.isRemote else { NSSound.beep(); return }
         let provider = LocalFileProvider()
         let items = selectedItems
         guard !items.isEmpty else { return }
@@ -1010,16 +1108,90 @@ public final class BrowserPaneViewController: NSViewController {
     }
 
     @objc func revealInFinderAction() {
+        guard !model.isRemote else { NSSound.beep(); return }
         let urls = selectedItems.map(\.url)
         NSWorkspace.shared.activateFileViewerSelecting(urls)
     }
 
     @objc func openInTerminalAction() {
+        guard !model.isRemote else { NSSound.beep(); return }
         let directory = selectedItems.first(where: { $0.isBrowsableDirectory })?.url ?? model.directory
         let terminal = URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app")
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.arguments = []
         NSWorkspace.shared.open([directory], withApplicationAt: terminal, configuration: configuration)
+    }
+
+    /// Downloads the remote selection into a local folder (normally the other
+    /// pane). Directories are walked with the same provider.
+    public func downloadSelection(to destination: URL) {
+        guard model.isRemote, let transfer = remoteTransfer else {
+            NSSound.beep()
+            return
+        }
+        let items = selectedItems
+        guard !items.isEmpty else { return }
+
+        let title = items.count == 1
+            ? "Download “\(items[0].name)”"
+            : "Download \(items.count) items"
+        let activityID = ActivityLog.shared.begin(title: title, detail: destination.path)
+
+        Task { [weak self] in
+            guard let self else { return }
+            var pairs: [FileOperationRecord.Pair] = []
+            var failures: [String] = []
+
+            for item in items {
+                let target = FileTransfer.uniqueDestination(
+                    for: destination.appendingPathComponent(item.name)
+                )
+                do {
+                    try await self.downloadRemoteItem(item, to: target, using: transfer)
+                    pairs.append(.init(source: item.url, target: target))
+                } catch {
+                    failures.append("\(item.name): \(error.localizedDescription)")
+                }
+            }
+
+            if !pairs.isEmpty {
+                self.onOperation?(FileOperationRecord(kind: .copy, pairs: pairs))
+            }
+            ActivityLog.shared.finish(
+                activityID,
+                status: failures.isEmpty ? .completed : .failed,
+                message: failures.first
+            )
+            if let first = failures.first {
+                self.presentMessage(
+                    title: failures.count == 1 ? "An item could not be downloaded" : "\(failures.count) items failed",
+                    message: first
+                )
+            }
+        }
+    }
+
+    private func downloadRemoteItem(
+        _ item: FileItem,
+        to target: URL,
+        using transfer: RemoteFileTransferring
+    ) async throws {
+        if item.isDirectory {
+            try FileManager.default.createDirectory(at: target, withIntermediateDirectories: false)
+            let children = try await model.fileProvider.list(
+                item.url,
+                options: ListOptions(showHidden: true)
+            )
+            for child in children {
+                try await downloadRemoteItem(
+                    child,
+                    to: target.appendingPathComponent(child.name),
+                    using: transfer
+                )
+            }
+        } else {
+            try await transfer.download(item.url, to: target)
+        }
     }
 
     static func uniqueDestination(for url: URL) -> URL {
@@ -1051,6 +1223,7 @@ public final class BrowserPaneViewController: NSViewController {
         kind: TransferKind,
         onFinish: ((TransferOutcome) -> Void)? = nil
     ) {
+        guard !model.isRemote else { NSSound.beep(); return }
         let destinationPath = destination.standardizedFileURL.path
         let inPlace = Set(
             sources
@@ -1239,19 +1412,21 @@ public final class BrowserPaneViewController: NSViewController {
     // MARK: - Clipboard
 
     @objc public func copy(_ sender: Any?) {
+        guard !model.isRemote else { NSSound.beep(); return }
         let urls = selectedItems.map(\.url)
         guard !urls.isEmpty else { return }
         FileClipboard.shared.write(urls, mode: .copy)
     }
 
     @objc public func cut(_ sender: Any?) {
+        guard !model.isRemote else { NSSound.beep(); return }
         let urls = selectedItems.map(\.url)
         guard !urls.isEmpty else { return }
         FileClipboard.shared.write(urls, mode: .cut)
     }
 
     @objc public func paste(_ sender: Any?) {
-        guard !model.isSearchResults else {
+        guard !model.isSearchResults, !model.isRemote else {
             NSSound.beep()
             return
         }
@@ -1497,6 +1672,7 @@ extension BrowserPaneViewController: NSCollectionViewDelegate, NSCollectionViewD
         _ collectionView: NSCollectionView,
         pasteboardWriterForItemAt indexPath: IndexPath
     ) -> NSPasteboardWriting? {
+        guard !model.isRemote else { return nil }
         guard indexPath.section < iconSections.count,
               indexPath.item < iconSections[indexPath.section].items.count else { return nil }
         return iconSections[indexPath.section].items[indexPath.item].url as NSURL
@@ -1508,7 +1684,8 @@ extension BrowserPaneViewController: NSCollectionViewDelegate, NSCollectionViewD
         proposedIndexPath proposedDropIndexPath: AutoreleasingUnsafeMutablePointer<NSIndexPath>,
         dropOperation proposedDropOperation: UnsafeMutablePointer<NSCollectionView.DropOperation>
     ) -> NSDragOperation {
-        draggingInfo.draggingPasteboard.canReadObject(
+        guard !model.isRemote else { return [] }
+        return draggingInfo.draggingPasteboard.canReadObject(
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
         ) ? .copy : []
@@ -1523,7 +1700,7 @@ extension BrowserPaneViewController: NSCollectionViewDelegate, NSCollectionViewD
         guard let urls = draggingInfo.draggingPasteboard.readObjects(
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
-        ) as? [URL], !urls.isEmpty else {
+        ) as? [URL], !urls.isEmpty, !model.isRemote else {
             return false
         }
         let kind: TransferKind = draggingInfo.draggingSourceOperationMask.contains(.move)
@@ -1640,6 +1817,7 @@ extension BrowserPaneViewController: NSTableViewDataSource, NSTableViewDelegate 
     // MARK: - Drag & drop
 
     public func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
+        guard !model.isRemote else { return nil }
         let rows = self.rows
         guard row < rows.count, case .item(let item) = rows[row] else { return nil }
         return item.url as NSURL
@@ -1651,7 +1829,7 @@ extension BrowserPaneViewController: NSTableViewDataSource, NSTableViewDelegate 
         proposedRow row: Int,
         proposedDropOperation dropOperation: NSTableView.DropOperation
     ) -> NSDragOperation {
-        guard !model.isSearchResults else { return [] }
+        guard !model.isSearchResults, !model.isRemote else { return [] }
         guard info.draggingPasteboard.canReadObject(
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
@@ -1671,7 +1849,7 @@ extension BrowserPaneViewController: NSTableViewDataSource, NSTableViewDelegate 
         guard let urls = info.draggingPasteboard.readObjects(
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
-        ) as? [URL], !urls.isEmpty, !model.isSearchResults else {
+        ) as? [URL], !urls.isEmpty, !model.isSearchResults, !model.isRemote else {
             return false
         }
 
@@ -1705,6 +1883,25 @@ extension BrowserPaneViewController: NSSearchFieldDelegate {
             return true
         }
         return false
+    }
+}
+
+// MARK: - Context menu validation
+
+extension BrowserPaneViewController: NSMenuItemValidation {
+    public func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        guard model.isRemote else { return true }
+        switch menuItem.action {
+        case #selector(cut(_:)), #selector(copy(_:)), #selector(paste(_:)),
+             #selector(newFolderAction), #selector(renameAction),
+             #selector(duplicateAction), #selector(batchRenameAction),
+             #selector(compressAction), #selector(moveToTrashAction),
+             #selector(revealInFinderAction), #selector(openInTerminalAction),
+             #selector(openInOtherPane), #selector(chooseOpenWithApplication):
+            return false
+        default:
+            return true
+        }
     }
 }
 

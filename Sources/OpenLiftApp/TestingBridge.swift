@@ -1,5 +1,6 @@
 #if DEBUG
 import AppKit
+import OpenLiftCore
 
 /// Dev-only command channel for UI tests.
 ///
@@ -33,7 +34,9 @@ final class TestingBridge: NSObject {
         "showSettings:",
         "batchRenameSelection:",
         "undo:",
-        "redo:"
+        "redo:",
+        "connectToServer:",
+        "downloadToOtherPane:"
     ]
 
     init(controller: MainWindowController) {
@@ -81,6 +84,21 @@ final class TestingBridge: NSObject {
         case "selectTab":
             guard let raw = info["index"] as? String, let index = Int(raw) else { return }
             controller.testSelectTab(index)
+
+        case "remote":
+            guard let protoRaw = info["proto"] as? String,
+                  let proto = RemoteProtocol(rawValue: protoRaw),
+                  let host = info["host"] as? String else { return }
+            let port = (info["port"] as? String).flatMap(Int.init) ?? proto.defaultPort
+            let connection = RemoteConnection(
+                proto: proto,
+                host: host,
+                port: port,
+                username: info["user"] as? String ?? "",
+                password: info["password"] as? String ?? "",
+                path: info["path"] as? String ?? "/"
+            )
+            controller.testOpenRemote(connection)
 
         default:
             break

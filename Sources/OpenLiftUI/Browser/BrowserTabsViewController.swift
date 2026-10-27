@@ -98,8 +98,9 @@ public final class BrowserTabsViewController: NSViewController {
     }
 
     public func tabStates() -> [PaneState] {
-        // Search results are session-only; a relaunch restores real folders.
-        panes.filter { !$0.model.isSearchResults }.map { pane in
+        // Search results and remote sessions are session-only; a relaunch
+        // restores real local folders.
+        panes.filter { !$0.model.isSearchResults && !$0.model.isRemote }.map { pane in
             PaneState(
                 path: pane.model.directory.path,
                 backHistory: pane.model.backStack.map(\.path),
@@ -110,7 +111,8 @@ public final class BrowserTabsViewController: NSViewController {
     }
 
     public func newTab(at url: URL? = nil) {
-        let directory = url ?? (activeModel.isSearchResults ? lastBrowserDirectory : activeModel.directory)
+        let useFallback = activeModel.isSearchResults || activeModel.isRemote
+        let directory = url ?? (useFallback ? lastBrowserDirectory : activeModel.directory)
         let model = BrowserModel(
             provider: provider,
             directory: directory,
@@ -134,6 +136,22 @@ public final class BrowserTabsViewController: NSViewController {
         )!
         let model = BrowserModel(
             provider: SearchResultsProvider(items: items),
+            directory: directory,
+            settings: settings,
+            settingsStore: nil
+        )
+        panes.append(makePane(model: model))
+        activeIndex = panes.count - 1
+        showActivePane()
+    }
+
+    /// Opens a session tab backed by a remote provider.
+    public func newRemoteTab(provider: FileProvider, directory: URL) {
+        var settings = activeModel.settings
+        settings.mode = .list
+        settings.group = .none
+        let model = BrowserModel(
+            provider: provider,
             directory: directory,
             settings: settings,
             settingsStore: nil
@@ -217,6 +235,9 @@ public final class BrowserTabsViewController: NSViewController {
     }
 
     private func tabTitle(for pane: BrowserPaneViewController) -> String {
+        if pane.model.isRemote {
+            return pane.model.fileProvider.displayName
+        }
         let name = pane.model.directory.lastPathComponent
         return name.isEmpty ? "/" : name
     }

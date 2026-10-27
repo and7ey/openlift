@@ -30,6 +30,7 @@ Early development. The local-file MVP is in progress:
 | Undo / redo (copy/move/rename/trash/new folder) | done |
 | Activity window (live progress, session log) | done |
 | Quick Look, Get Info, Open With | done |
+| Remote: SFTP/FTP connections, browsing, download | partial |
 | Search: in-folder filter + advanced window (recursive, content, preview) | done |
 | ZIP archives | done |
 | Icon view | done |
@@ -85,7 +86,7 @@ Release builds compile the bridge out.
 The runner covers ordering/grouping, favorites persistence, per-folder view
 settings, tab-aware window state, the local provider (listing, hidden files,
 move, create, delete), file transfers, undo records, the activity log, search,
-archives, advanced search, batch rename, app settings and shortcuts — 148 checks, all
+archives, advanced search, batch rename, remote listing parsing, app settings and shortcuts — 160 checks, all
 dependency-free. When Xcode is
 available, `Tests/OpenLiftTests/OpenLiftTests.swift` can be re-enabled as a
 `swift-testing` target in `Package.swift`.
@@ -112,7 +113,7 @@ Sources/
     Model/            FileItem, SortDescriptor, ViewSettings, Favorite
     Operations/       TransferPlanner, TransferExecutor, SearchEngine, progress
     Provider/         FileProvider protocol, LocalFileProvider, SearchResultsProvider,
-                      DirectoryWatcher
+                      SFTPRemoteProvider, FTPRemoteProvider, DirectoryWatcher
     Persistence/      FavoritesStore, WindowStateStore, ViewSettingsStore
   OpenLiftUI/         AppKit views
     Browser/          BrowserTabsViewController, BrowserPaneViewController,
@@ -120,6 +121,7 @@ Sources/
     Clipboard/        FileClipboard — file URLs + cut marker on NSPasteboard
     Activity/         ActivityWindowController — live progress + session log
     Search/           AdvancedSearchWindowController — criteria, results, preview
+    Remote/           RemoteConnectionWindowController — SFTP/FTP session sheet
     Info/             InfoWindowController — Get Info panel
     Preview/          QuickLookController, OpenWithMenu
     Sidebar/          SidebarViewController (favorites + mounted volumes)
@@ -162,6 +164,13 @@ Design notes:
   compress) work, while paste, new folder and navigation into the virtual
   folder are disabled. Results tabs
   are session-only and are not restored on relaunch.
+- Remote tabs are session-only. SFTP is driven through the system `sftp`
+  binary inside a pseudo-terminal (password or SSH agent); FTP/FTPS use
+  `curl` with credentials passed on stdin, never in argv. Passwords are not
+  persisted. Remote panes support browsing, refresh, navigation, Quick Look
+  (downloads to the cache) and “Download to Other Pane”; local-only mutations,
+  search, clipboard operations and rename/compress are disabled until upload
+  and remote mutation support lands.
 - Batch rename builds a plan first: template tokens (`{name}`, `{ext}`,
   `{n}`/`{nn}`, `{date}`), find/replace, numbering and a live old/new/status
   preview. Conflicts with existing or duplicate names block Apply. Execution
@@ -209,6 +218,8 @@ See [`docs/spec/mvp.md`](docs/spec/mvp.md) for the full MVP specification and
 | Get Info | ⌘I |
 | Find in folder | ⌘F |
 | Advanced Search | ⇧⌘F |
+| Connect to Server | ⌘K |
+| Download to Other Pane | ⌥⌘D |
 | Settings | ⌘, |
 | Show Hidden Files | ⇧⌘. |
 | Show Sidebar | ⌃⌘S |

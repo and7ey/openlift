@@ -21,6 +21,7 @@ public final class MainWindowController: NSWindowController {
     private var settingsWindowController: SettingsWindowController?
     private var shortcutsWindowController: ShortcutsWindowController?
     private var searchWindowController: AdvancedSearchWindowController?
+    private var remoteConnectionController: RemoteConnectionWindowController?
     private let shortcuts = ShortcutStore()
 
     private var isSinglePane = false
@@ -187,7 +188,7 @@ public final class MainWindowController: NSWindowController {
     private func configureSidebar() {
         sidebarViewController.onSelect = { [weak self] url in
             guard let self else { return }
-            if self.activePane.model.isSearchResults {
+            if self.activePane.model.isSearchResults || self.activePane.model.isRemote {
                 self.activeTabs.newTab(at: url)
             } else {
                 self.activePane.model.navigate(to: url)
@@ -368,12 +369,50 @@ public final class MainWindowController: NSWindowController {
 
         let path = (field.stringValue as NSString).expandingTildeInPath
         guard !path.isEmpty else { return }
+        if activePane.model.isRemote {
+            var components = URLComponents(
+                url: activePane.model.directory,
+                resolvingAgainstBaseURL: false
+            )
+            components?.percentEncodedPath = (path.hasPrefix("/") ? path : "/" + path)
+                .addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path
+            if let url = components?.url {
+                activePane.model.navigate(to: url)
+            }
+            return
+        }
         let url = URL(fileURLWithPath: path, isDirectory: true)
         if activePane.model.isSearchResults {
             activeTabs.newTab(at: url)
         } else {
             activePane.model.navigate(to: url)
         }
+    }
+
+    // MARK: - Remote
+
+    @objc func connectToServer(_ sender: Any?) {
+        if remoteConnectionController == nil {
+            let controller = RemoteConnectionWindowController()
+            controller.onConnect = { [weak self] connection in
+                guard let self else { return }
+                let provider = RemoteProviderFactory.make(connection)
+                self.activeTabs.newRemoteTab(
+                    provider: provider,
+                    directory: connection.rootURL
+                )
+            }
+            remoteConnectionController = controller
+        }
+        remoteConnectionController?.present(on: window)
+    }
+
+    @objc func downloadToOtherPane(_ sender: Any?) {
+        guard activePane.model.isRemote, !otherPane.model.isRemote else {
+            NSSound.beep()
+            return
+        }
+        activePane.downloadSelection(to: otherPane.model.directory)
     }
 
     // MARK: - Search
@@ -383,7 +422,7 @@ public final class MainWindowController: NSWindowController {
     }
 
     @objc func showAdvancedSearch(_ sender: Any?) {
-        guard !activePane.model.isSearchResults else { return }
+        guard !activePane.model.isSearchResults, !activePane.model.isRemote else { return }
         presentAdvancedSearch(
             root: activePane.model.directory,
             recursive: true,
@@ -416,6 +455,11 @@ public final class MainWindowController: NSWindowController {
 
     func testSelectTab(_ index: Int) {
         activeTabs.selectTab(index)
+    }
+
+    func testOpenRemote(_ connection: RemoteConnection) {
+        let provider = RemoteProviderFactory.make(connection)
+        activeTabs.newRemoteTab(provider: provider, directory: connection.rootURL)
     }
 
     /// Invokes a whitelisted selector on the active pane or the controller.
@@ -508,6 +552,13 @@ public final class MainWindowController: NSWindowController {
     }
 
     private func updateWindowTitle() {
+        if activePane.model.isRemote {
+            let provider = activePane.model.fileProvider
+            let path = activePane.model.directory.path
+            window?.title = path == "/" ? provider.displayName : activePane.model.directory.lastPathComponent
+            window?.subtitle = provider.displayName
+            return
+        }
         if activePane.model.isSearchResults {
             window?.title = "Search Results"
             window?.subtitle = "Recursive search results"
@@ -588,6 +639,17 @@ public final class MainWindowController: NSWindowController {
 
     @objc public func goHome(_ sender: Any?) {
         guard !activePane.model.isSearchResults else { return }
+        if activePane.model.isRemote {
+            var components = URLComponents(
+                url: activePane.model.directory,
+                resolvingAgainstBaseURL: false
+            )
+            components?.percentEncodedPath = "/"
+            if let url = components?.url {
+                activePane.model.navigate(to: url)
+            }
+            return
+        }
         activePane.model.navigate(to: URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true))
     }
     @objc public func refresh(_ sender: Any?) { activePane.model.reload() }
@@ -723,11 +785,21 @@ extension MainWindowController: NSMenuItemValidation {
             menuItem.title = history.redoTitle
             return history.canRedo
         case #selector(cut(_:)), #selector(copy(_:)):
-            return !activePane.selectedItems.isEmpty
+            return !activePane.model.isRemote && !activePane.selectedItems.isEmpty
         case #selector(paste(_:)):
-            return !activePane.model.isSearchResults && !FileClipboard.shared.urls.isEmpty
-        case #selector(newFolder(_:)), #selector(showAdvancedSearch(_:)):
             return !activePane.model.isSearchResults
+                && !activePane.model.isRemote
+                && !FileClipboard.shared.urls.isEmpty
+        case #selector(newFolder(_:)), #selector(showAdvancedSearch(_:)):
+            return !activePane.model.isSearchResults && !activePane.model.isRemote
+        case #selector(batchRenameSelection(_:)), #selector(compressSelection(_:)),
+             #selector(duplicateSelection(_:)), #selector(renameSelection(_:)),
+             #selector(moveToTrash(_:)):
+            return !activePane.model.isRemote && !activePane.selectedItems.isEmpty
+        case #selector(downloadToOtherPane(_:)):
+            return activePane.model.isRemote
+                && !otherPane.model.isRemote
+                && !activePane.selectedItems.isEmpty
         case #selector(goBack(_:)):
             return !activePane.model.isSearchResults && activePane.model.canGoBack
         case #selector(goForward(_:)):
@@ -735,8 +807,6 @@ extension MainWindowController: NSMenuItemValidation {
         case #selector(goUp(_:)), #selector(goHome(_:)):
             return !activePane.model.isSearchResults
         case #selector(quickLook(_:)), #selector(showInfo(_:)):
-            return !activePane.selectedItems.isEmpty
-        case #selector(compressSelection(_:)), #selector(batchRenameSelection(_:)):
             return !activePane.selectedItems.isEmpty
         default:
             return true
@@ -877,7 +947,9 @@ extension MainWindowController: NSToolbarItemValidation {
         case "up":
             return !results && activePane.model.canGoUp
         case "newFolder":
-            return !results
+            return !results && !activePane.model.isRemote
+        case "trash":
+            return !activePane.model.isRemote
         default:
             return true
         }

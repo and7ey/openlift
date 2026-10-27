@@ -549,6 +549,58 @@ do {
     print("FAIL batch rename: \(error)")
 }
 
+// MARK: - Remote listings
+
+do {
+    let base = RemoteURL.make(
+        scheme: "sftp",
+        username: "demo",
+        host: "example.com",
+        port: 22,
+        path: "/home/demo"
+    )
+    let parser = UnixListingParser()
+    let listing = """
+    sftp> ls -la "/home/demo"
+    drwx------ 2 demo users          0 Mar 31  2023 pub
+    -rw------- 1 demo users        379 Sep 19  2023 readme.txt
+    lrwxrwxrwx 1 demo users          8 Aug 20  2004 link -> target.txt
+    -rw-r--r-- 1 demo users         12 Oct 27 13:07 .hidden
+    total 4
+    """
+    let items = parser.items(from: listing, base: base, showHidden: false)
+    check(items.count == 3, "remote listing skips prompts, totals and hidden files")
+    check(items.first(where: { $0.name == "pub" })?.isDirectory == true, "remote listing detects folders")
+    check(items.first(where: { $0.name == "readme.txt" })?.size == 379, "remote listing reads sizes")
+    check(items.first(where: { $0.name == "link" })?.isSymlink == true, "remote listing detects symlinks")
+    check(items.first(where: { $0.name == "link" })?.url.lastPathComponent == "link", "symlink targets are stripped from names")
+    check(
+        parser.items(from: listing, base: base, showHidden: true).contains { $0.name == ".hidden" },
+        "remote listing can include hidden files"
+    )
+
+    let ftpListing = """
+    lrwxrwxrwx    1 0        0               8 Aug 20  2004 CRYPTO.README -> .message
+    -rw-r--r--    1 0        0           17864 Oct 23  2003 MISSING-FILES
+    drwxrwxr-x  326 0        3003        12288 Jan 21  2026 gnu
+    """
+    let ftpItems = parser.items(from: ftpListing, base: base, showHidden: false)
+    check(ftpItems.count == 3, "FTP LIST output is parsed with the same parser")
+    check(ftpItems.first(where: { $0.name == "gnu" })?.isDirectory == true, "FTP folders are recognized")
+
+    check(base.host == "example.com" && base.user == "demo", "remote URLs keep host and user")
+    check(RemoteURL.child(base, "file name.txt").lastPathComponent == "file name.txt", "remote children keep spaces")
+
+    let connection = RemoteConnection(
+        proto: .sftp,
+        host: "example.com",
+        username: "demo",
+        password: "secret"
+    )
+    check(connection.displayName.contains("demo@example.com"), "remote connections have a display name")
+    check(RemoteProtocol.ftps.defaultPort == 21, "FTPS uses the FTP port")
+}
+
 // MARK: - Undo records
 
 do {

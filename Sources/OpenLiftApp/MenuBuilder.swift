@@ -75,6 +75,7 @@ public enum MenuBuilder {
         menu.addItem(.separator())
         menu.addItem(makeItem("Copy to Other Pane", #selector(MainWindowController.copyToOtherPane(_:)), "c", [.command, .control], target))
         menu.addItem(makeItem("Move to Other Pane", #selector(MainWindowController.moveToOtherPane(_:)), "m", [.command, .control], target))
+        menu.addItem(makeItem("Download to Other Pane", #selector(MainWindowController.downloadToOtherPane(_:)), "d", [.command, .option], target))
         menu.addItem(.separator())
         menu.addItem(makeItem("Move to Trash", #selector(MainWindowController.moveToTrash(_:)), String(UnicodeScalar(NSBackspaceCharacter)!), [.command], target))
         menu.addItem(.separator())
@@ -155,6 +156,8 @@ public enum MenuBuilder {
         menu.addItem(makeItem("Home", #selector(MainWindowController.goHome(_:)), "h", [.command, .shift], target))
         menu.addItem(.separator())
         menu.addItem(makeItem("Go to Folder…", #selector(MainWindowController.goToFolder(_:)), "g", [.command, .shift], target))
+        menu.addItem(.separator())
+        menu.addItem(makeItem("Connect to Server…", #selector(MainWindowController.connectToServer(_:)), "k", [.command], target))
         item.submenu = menu
         return item
     }

@@ -100,6 +100,14 @@ public final class BrowserModel {
         provider.identifier == SearchResultsProvider.identifierValue
     }
 
+    /// True for an SFTP/FTP-backed pane.
+    public var isRemote: Bool {
+        provider.identifier.hasPrefix("remote:")
+    }
+
+    /// Provider behind this pane; used by remote-specific actions.
+    public var fileProvider: FileProvider { provider }
+
     public var canGoBack: Bool { !backStack.isEmpty }
     public var canGoForward: Bool { !forwardStack.isEmpty }
     public var canGoUp: Bool { directory.path != "/" }

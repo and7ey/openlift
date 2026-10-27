@@ -61,6 +61,12 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned
 ## Post-MVP — Remote and advanced ⬜
 
 - [ ] SFTP / FTP / FTPS providers
+  - [x] Connection sheet for SFTP, FTP and FTPS (password or SSH agent)
+  - [x] Browse, navigate, refresh and show the remote URL
+  - [x] Download files and folders to the local pane
+  - [x] Remote listing parser (UNIX `ls -l` output from SFTP and FTP)
+  - [ ] Upload, new folder, rename and delete from remote panes
+  - [ ] Remembered server bookmarks
 - [ ] WebDAV
 - [ ] S3 / Backblaze B2
 - [ ] Dropbox / Google Drive / OneDrive
