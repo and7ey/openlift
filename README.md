@@ -41,7 +41,8 @@ Early development. The local-file MVP is in progress:
 | Icon view | done |
 | Settings window | done |
 | Keyboard shortcut customization | done |
-| Remote providers (SFTP, FTP, WebDAV, S3, cloud) | planned (post-MVP) |
+| S3 / Backblaze B2 | not implemented (out of scope) |
+| Native OAuth cloud APIs | not implemented (desktop sync folders are used) |
 
 ## Requirements
 
@@ -91,7 +92,7 @@ Release builds compile the bridge out.
 The runner covers ordering/grouping, favorites persistence, per-folder view
 settings, tab-aware window state, the local provider (listing, hidden files,
 move, create, delete), file transfers, undo records, the activity log, search,
-archives, advanced search, batch rename, archive browsing, Git status/actions, themes, cloud drives, folder compare/sync, remote listings/bookmarks, WebDAV listings, app settings and shortcuts — 237 checks, all
+archives, advanced search, batch rename, archive browsing, Git status/actions, themes, cloud drives, folder compare/sync, remote listings/bookmarks, WebDAV listings, app settings and shortcuts — 245 checks, all
 dependency-free. When Xcode is
 available, `Tests/OpenLiftTests/OpenLiftTests.swift` can be re-enabled as a
 `swift-testing` target in `Package.swift`.
