@@ -26,7 +26,7 @@ public final class InfoWindowController: NSWindowController {
         window.title = "Info"
         window.isReleasedWhenClosed = false
         window.tabbingMode = .disallowed
-        window.center()
+        TestWindowPlacement.place(window)
 
         super.init(window: window)
         configureContent()

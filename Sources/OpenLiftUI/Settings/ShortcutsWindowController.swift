@@ -167,7 +167,7 @@ public final class ShortcutsWindowController: NSWindowController {
         window.title = "Keyboard Shortcuts"
         window.isReleasedWhenClosed = false
         window.tabbingMode = .disallowed
-        window.center()
+        TestWindowPlacement.place(window)
         super.init(window: window)
         configureContent()
     }

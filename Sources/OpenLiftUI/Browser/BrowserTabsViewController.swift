@@ -18,6 +18,9 @@ public final class BrowserTabsViewController: NSViewController {
     private let container = NSView()
     public private(set) var panes: [BrowserPaneViewController] = []
     public private(set) var activeIndex = 0
+    /// Last real folder shown in this container; new tabs use it while a
+    /// search-results tab is active.
+    private var lastBrowserDirectory = URL(fileURLWithPath: NSHomeDirectory())
 
     public init(
         provider: FileProvider,
@@ -37,12 +40,12 @@ public final class BrowserTabsViewController: NSViewController {
                 settings: state.settings,
                 settingsStore: settingsStore
             )
-            let pane = BrowserPaneViewController(model: model)
-            pane.onActivate = { [weak self] in self?.onActivate?() }
-            pane.onOperation = { [weak self] record in self?.onOperation?(record) }
-            return pane
+            return makePane(model: model)
         }
         activeIndex = min(max(activeTab, 0), panes.count - 1)
+        if let first = panes.first(where: { !$0.model.isSearchResults }) {
+            lastBrowserDirectory = first.model.directory
+        }
     }
 
     @available(*, unavailable)
@@ -95,7 +98,8 @@ public final class BrowserTabsViewController: NSViewController {
     }
 
     public func tabStates() -> [PaneState] {
-        panes.map { pane in
+        // Search results are session-only; a relaunch restores real folders.
+        panes.filter { !$0.model.isSearchResults }.map { pane in
             PaneState(
                 path: pane.model.directory.path,
                 backHistory: pane.model.backStack.map(\.path),
@@ -106,20 +110,45 @@ public final class BrowserTabsViewController: NSViewController {
     }
 
     public func newTab(at url: URL? = nil) {
-        let directory = url ?? activeModel.directory
+        let directory = url ?? (activeModel.isSearchResults ? lastBrowserDirectory : activeModel.directory)
         let model = BrowserModel(
             provider: provider,
             directory: directory,
             settings: activeModel.settings,
             settingsStore: settingsStore
         )
+        panes.append(makePane(model: model))
+        activeIndex = panes.count - 1
+        showActivePane()
+    }
+
+    /// Opens a tab that lists a finished search's results.
+    public func newSearchResultsTab(items: [FileItem]) {
+        guard !items.isEmpty else { return }
+
+        var settings = activeModel.settings
+        settings.mode = .list
+        settings.group = .none
+        let directory = URL(
+            string: "openlift-search:///Search%20Results%20(\(items.count))"
+        )!
+        let model = BrowserModel(
+            provider: SearchResultsProvider(items: items),
+            directory: directory,
+            settings: settings,
+            settingsStore: nil
+        )
+        panes.append(makePane(model: model))
+        activeIndex = panes.count - 1
+        showActivePane()
+    }
+
+    private func makePane(model: BrowserModel) -> BrowserPaneViewController {
         let pane = BrowserPaneViewController(model: model)
         pane.onActivate = { [weak self] in self?.onActivate?() }
         pane.onOperation = { [weak self] record in self?.onOperation?(record) }
-
-        panes.append(pane)
-        activeIndex = panes.count - 1
-        showActivePane()
+        pane.onOpenSearchResultFolder = { [weak self] url in self?.newTab(at: url) }
+        return pane
     }
 
     public func closeTab(_ index: Int) {
@@ -167,6 +196,9 @@ public final class BrowserTabsViewController: NSViewController {
 
         let pane = activePane
         panes.forEach { $0.isActivePane = false }
+        if !pane.model.isSearchResults {
+            lastBrowserDirectory = pane.model.directory
+        }
         if pane.parent == nil {
             addChild(pane)
         }

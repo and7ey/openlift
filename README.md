@@ -29,7 +29,8 @@ Early development. The local-file MVP is in progress:
 | Undo / redo (copy/move/rename/trash/new folder) | done |
 | Activity window (live progress, session log) | done |
 | Quick Look, Get Info, Open With | done |
-| Search in folder, ZIP archives | done |
+| Search: in-folder filter + advanced window (recursive, content, preview) | done |
+| ZIP archives | done |
 | Icon view | done |
 | Settings window | done |
 | Keyboard shortcut customization | done |
@@ -74,10 +75,17 @@ the vector-like drawing in `Scripts/make-icon.swift`:
 swift run OpenLiftSelfTest
 ```
 
+For UI runs that must not steal focus from the person at the Mac, debug builds
+accept `OPENLIFT_TESTING=1`: OpenLift starts as an accessory app, places its
+windows on a screen whose name contains “OpenLift Test Display”, and a local
+`dev.openlift.test` distributed-notification channel drives whitelisted commands.
+Release builds compile the bridge out.
+
 The runner covers ordering/grouping, favorites persistence, per-folder view
 settings, tab-aware window state, the local provider (listing, hidden files,
 move, create, delete), file transfers, undo records, the activity log, search,
-archives, app settings and shortcuts — 107 checks, all dependency-free. When Xcode is
+archives, advanced search, app settings and shortcuts — 121 checks, all
+dependency-free. When Xcode is
 available, `Tests/OpenLiftTests/OpenLiftTests.swift` can be re-enabled as a
 `swift-testing` target in `Package.swift`.
 
@@ -101,14 +109,16 @@ Sources/
   OpenLiftCore/       platform-independent model, providers, persistence
     Browser/          BrowserModel — listing, history, sorting, grouping, FSEvents
     Model/            FileItem, SortDescriptor, ViewSettings, Favorite
-    Operations/       TransferPlanner, TransferExecutor, progress, cancellation
-    Provider/         FileProvider protocol, LocalFileProvider, DirectoryWatcher
+    Operations/       TransferPlanner, TransferExecutor, SearchEngine, progress
+    Provider/         FileProvider protocol, LocalFileProvider, SearchResultsProvider,
+                      DirectoryWatcher
     Persistence/      FavoritesStore, WindowStateStore, ViewSettingsStore
   OpenLiftUI/         AppKit views
     Browser/          BrowserTabsViewController, BrowserPaneViewController,
                       PaneTabBarView (path bar, table, status bar)
     Clipboard/        FileClipboard — file URLs + cut marker on NSPasteboard
     Activity/         ActivityWindowController — live progress + session log
+    Search/           AdvancedSearchWindowController — criteria, results, preview
     Info/             InfoWindowController — Get Info panel
     Preview/          QuickLookController, OpenWithMenu
     Sidebar/          SidebarViewController (favorites + mounted volumes)
@@ -139,8 +149,18 @@ Design notes:
 - The icon view is the same pane model in an `NSCollectionView`: selection,
   search, grouping, drag & drop, Quick Look and every command work the same,
   and list/icon mode is remembered per folder.
-- Search is a live, case-insensitive name filter on the current folder
+- Quick search is a live, case-insensitive name filter on the current folder
   (`BrowserModel.searchQuery`); it does not walk into subfolders.
+- Advanced search runs `SearchEngine` off the main actor and streams batches.
+  It supports recursion, hidden files, files/folders/extension filters and
+  text-in-file matching (UTF-8/Latin-1, binary files and files over 16 MB are
+  skipped). The magnifier next to the path bar offers filter, folder,
+  recursive and content searches.
+- “Show in Tab” opens results as a virtual `SearchResultsProvider` tab:
+  full paths, Quick Look, Get Info and item-level commands (trash, rename,
+  compress) work, while paste, new folder and navigation into the virtual
+  folder are disabled. Results tabs
+  are session-only and are not restored on relaunch.
 - “Compress” builds a ZIP with the system `zip` tool, so there is no archive
   dependency; the work runs off the main actor and is logged in Activity.
 - `ActivityLog` is an in-memory session log shared by the panes and the
@@ -181,6 +201,7 @@ See [`docs/spec/mvp.md`](docs/spec/mvp.md) for the full MVP specification and
 | Quick Look | Space or ⌘Y |
 | Get Info | ⌘I |
 | Find in folder | ⌘F |
+| Advanced Search | ⇧⌘F |
 | Settings | ⌘, |
 | Show Hidden Files | ⇧⌘. |
 | Show Sidebar | ⌃⌘S |

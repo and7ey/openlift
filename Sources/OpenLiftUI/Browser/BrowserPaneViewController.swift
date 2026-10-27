@@ -15,10 +15,15 @@ public final class BrowserPaneViewController: NSViewController {
     public var onActivate: (() -> Void)?
     /// Called when the user opens a directory or file from this pane.
     public var onOpenDirectory: ((URL) -> Void)?
+    /// Called when a folder in a search-results tab is opened; the container
+    /// turns it into a new browser tab.
+    public var onOpenSearchResultFolder: ((URL) -> Void)?
     /// Called with a reversible record after a mutating operation succeeds.
     public var onOperation: ((FileOperationRecord) -> Void)?
 
     private let pathControl = NSPathControl()
+    private let searchOptionsButton = NSButton()
+    private var pathHeight: NSLayoutConstraint?
     private let tableView = ActivatingTableView()
     private let scrollView = NSScrollView()
     private let iconScrollView = NSScrollView()
@@ -64,12 +69,14 @@ public final class BrowserPaneViewController: NSViewController {
         container.translatesAutoresizingMaskIntoConstraints = false
 
         configurePathControl()
+        configureSearchOptionsButton()
         configureSearchField()
         configureTable()
         configureCollectionView()
         configureStatusBar()
 
         container.addSubview(pathControl)
+        container.addSubview(searchOptionsButton)
         container.addSubview(searchField)
         container.addSubview(scrollView)
         container.addSubview(iconScrollView)
@@ -82,11 +89,19 @@ public final class BrowserPaneViewController: NSViewController {
         self.operationBarHeight = operationBarHeight
         let searchBarHeight = searchField.heightAnchor.constraint(equalToConstant: 0)
         self.searchBarHeight = searchBarHeight
+        let pathHeight = pathControl.heightAnchor.constraint(equalToConstant: 24)
+        self.pathHeight = pathHeight
 
         NSLayoutConstraint.activate([
             pathControl.topAnchor.constraint(equalTo: container.topAnchor, constant: 6),
             pathControl.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
-            pathControl.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
+            pathControl.trailingAnchor.constraint(equalTo: searchOptionsButton.leadingAnchor, constant: -6),
+            pathHeight,
+
+            searchOptionsButton.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
+            searchOptionsButton.centerYAnchor.constraint(equalTo: pathControl.centerYAnchor),
+            searchOptionsButton.widthAnchor.constraint(equalToConstant: 22),
+            searchOptionsButton.heightAnchor.constraint(equalToConstant: 22),
 
             searchField.topAnchor.constraint(equalTo: pathControl.bottomAnchor, constant: 2),
             searchField.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
@@ -151,6 +166,19 @@ public final class BrowserPaneViewController: NSViewController {
         pathControl.action = #selector(pathControlClicked(_:))
         pathControl.translatesAutoresizingMaskIntoConstraints = false
         pathControl.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    }
+
+    private func configureSearchOptionsButton() {
+        searchOptionsButton.bezelStyle = .inline
+        searchOptionsButton.isBordered = false
+        searchOptionsButton.image = NSImage(
+            systemSymbolName: "magnifyingglass",
+            accessibilityDescription: "Search options"
+        )
+        searchOptionsButton.toolTip = "Search options"
+        searchOptionsButton.target = self
+        searchOptionsButton.action = #selector(showSearchOptions(_:))
+        searchOptionsButton.translatesAutoresizingMaskIntoConstraints = false
     }
 
     private func configureSearchField() {
@@ -229,6 +257,7 @@ public final class BrowserPaneViewController: NSViewController {
         tableView.sortDescriptors = [NSSortDescriptor(key: model.settings.sort.key.rawValue, ascending: model.settings.sort.ascending)]
 
         addColumn(id: "name", title: "Name", width: 260)
+        addColumn(id: "path", title: "Path", width: 300, sortable: false)
         addColumn(id: "size", title: "Size", width: 80, alignment: .right)
         addColumn(id: "kind", title: "Kind", width: 130)
         addColumn(id: "modified", title: "Date Modified", width: 160)
@@ -241,13 +270,22 @@ public final class BrowserPaneViewController: NSViewController {
         scrollView.borderType = .noBorder
     }
 
-    private func addColumn(id: String, title: String, width: CGFloat, alignment: NSTextAlignment = .left) {
+    private func addColumn(
+        id: String,
+        title: String,
+        width: CGFloat,
+        alignment: NSTextAlignment = .left,
+        sortable: Bool = true
+    ) {
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(id))
         column.title = title
         column.width = width
         column.minWidth = 50
         column.headerCell.alignment = alignment
-        column.sortDescriptorPrototype = NSSortDescriptor(key: id, ascending: true)
+        column.isHidden = id == "path"
+        if sortable {
+            column.sortDescriptorPrototype = NSSortDescriptor(key: id, ascending: true)
+        }
         tableView.addTableColumn(column)
     }
 
@@ -336,7 +374,14 @@ public final class BrowserPaneViewController: NSViewController {
     }
 
     private func reloadView() {
-        pathControl.url = model.directory
+        let resultsMode = model.isSearchResults
+        pathHeight?.constant = resultsMode ? 0 : 24
+        pathControl.isHidden = resultsMode
+        searchOptionsButton.isHidden = resultsMode
+        if !resultsMode {
+            pathControl.url = model.directory
+        }
+        tableView.tableColumn(withIdentifier: NSUserInterfaceItemIdentifier("path"))?.isHidden = !resultsMode
         searchField.placeholderString = "Search in “\(model.directory.lastPathComponent)”"
         if model.searchQuery.isEmpty, searchField.currentEditor() == nil {
             searchField.stringValue = ""
@@ -397,12 +442,15 @@ public final class BrowserPaneViewController: NSViewController {
             statusLabel.stringValue = operationProgressText
             return
         }
+        let resultsMode = model.isSearchResults
         let count = model.displayItems.count
         let selected = model.settings.mode == .icon
             ? collectionView.selectionIndexPaths.count
             : tableView.selectedRowIndexes.count
         var text: String
-        if model.searchQuery.isEmpty {
+        if resultsMode {
+            text = count == 1 ? "1 result" : "\(Self.number(count)) results"
+        } else if model.searchQuery.isEmpty {
             text = Self.itemCountText(count)
         } else {
             text = "\(Self.number(count)) of \(Self.number(model.items.count)) items"
@@ -425,6 +473,7 @@ public final class BrowserPaneViewController: NSViewController {
     }
 
     private func availableCapacity() -> Int64? {
+        guard model.directory.isFileURL else { return nil }
         let values = try? model.directory.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
         return values?.volumeAvailableCapacityForImportantUsage
     }
@@ -581,11 +630,87 @@ public final class BrowserPaneViewController: NSViewController {
     @objc public func openSelection() {
         guard let item = focusedItem else { return }
         if item.isBrowsableDirectory {
-            model.navigate(to: item.url)
-            onOpenDirectory?(item.url)
+            if model.isSearchResults {
+                onOpenSearchResultFolder?(item.url)
+            } else {
+                model.navigate(to: item.url)
+                onOpenDirectory?(item.url)
+            }
         } else {
             NSWorkspace.shared.open(item.url)
         }
+    }
+
+    @objc private func showSearchOptions(_ sender: NSButton) {
+        let menu = NSMenu()
+
+        let filter = NSMenuItem(
+            title: "Filter in This Folder",
+            action: #selector(filterFromMenu(_:)),
+            keyEquivalent: ""
+        )
+        filter.target = self
+        menu.addItem(filter)
+        menu.addItem(.separator())
+
+        let here = NSMenuItem(
+            title: "Search in This Folder…",
+            action: #selector(searchHereFromMenu(_:)),
+            keyEquivalent: ""
+        )
+        here.target = self
+        menu.addItem(here)
+
+        let recursive = NSMenuItem(
+            title: "Search Recursively…",
+            action: #selector(searchRecursivelyFromMenu(_:)),
+            keyEquivalent: ""
+        )
+        recursive.target = self
+        menu.addItem(recursive)
+
+        let content = NSMenuItem(
+            title: "Search File Contents…",
+            action: #selector(searchContentsFromMenu(_:)),
+            keyEquivalent: ""
+        )
+        content.target = self
+        menu.addItem(content)
+
+        menu.popUp(
+            positioning: nil,
+            at: NSPoint(x: 0, y: sender.bounds.height + 4),
+            in: sender
+        )
+    }
+
+    @objc private func filterFromMenu(_ sender: Any?) {
+        beginSearch()
+    }
+
+    @objc private func searchHereFromMenu(_ sender: Any?) {
+        startAdvancedSearch(recursive: false, focusContent: false)
+    }
+
+    @objc private func searchRecursivelyFromMenu(_ sender: Any?) {
+        startAdvancedSearch(recursive: true, focusContent: false)
+    }
+
+    @objc private func searchContentsFromMenu(_ sender: Any?) {
+        startAdvancedSearch(recursive: true, focusContent: true)
+    }
+
+    private func startAdvancedSearch(recursive: Bool, focusContent: Bool) {
+        guard !model.isSearchResults else { return }
+        NotificationCenter.default.post(
+            name: .openLiftAdvancedSearch,
+            object: self,
+            userInfo: [
+                "root": model.directory,
+                "recursive": recursive,
+                "focusContent": focusContent
+            ]
+        )
     }
 
     /// Reveals the in-folder search field, or closes it when already open.
@@ -682,6 +807,10 @@ public final class BrowserPaneViewController: NSViewController {
     }
 
     @objc func newFolderAction() {
+        guard !model.isSearchResults else {
+            NSSound.beep()
+            return
+        }
         let alert = NSAlert()
         alert.messageText = "New Folder"
         alert.informativeText = "Enter a name for the new folder."
@@ -1092,6 +1221,10 @@ public final class BrowserPaneViewController: NSViewController {
     }
 
     @objc public func paste(_ sender: Any?) {
+        guard !model.isSearchResults else {
+            NSSound.beep()
+            return
+        }
         let clipboard = FileClipboard.shared
         let destination = model.directory
         let kind: TransferKind = clipboard.isCut ? .move : .copy
@@ -1406,6 +1539,10 @@ extension BrowserPaneViewController: NSTableViewDataSource, NSTableViewDelegate 
                 textField.font = .systemFont(ofSize: NSFont.systemFontSize)
                 cell.imageView?.image = icon(for: item)
                 textField.textColor = item.isHidden ? .secondaryLabelColor : .labelColor
+            case "path":
+                textField.stringValue = item.url.path
+                textField.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+                textField.textColor = .secondaryLabelColor
             case "size":
                 textField.stringValue = item.isDirectory ? "--" : Formatting.size(item.size)
             case "kind":
@@ -1484,6 +1621,7 @@ extension BrowserPaneViewController: NSTableViewDataSource, NSTableViewDelegate 
         proposedRow row: Int,
         proposedDropOperation dropOperation: NSTableView.DropOperation
     ) -> NSDragOperation {
+        guard !model.isSearchResults else { return [] }
         guard info.draggingPasteboard.canReadObject(
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
@@ -1503,7 +1641,7 @@ extension BrowserPaneViewController: NSTableViewDataSource, NSTableViewDelegate 
         guard let urls = info.draggingPasteboard.readObjects(
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
-        ) as? [URL], !urls.isEmpty else {
+        ) as? [URL], !urls.isEmpty, !model.isSearchResults else {
             return false
         }
 
@@ -1576,4 +1714,7 @@ public extension Notification.Name {
     static let openLiftOpenInOtherPane = Notification.Name("OpenLiftOpenInOtherPane")
     /// Requests the Get Info panel for the URLs in `userInfo["urls"]`.
     static let openLiftGetInfo = Notification.Name("openLiftGetInfo")
+    /// Opens the advanced search window; `userInfo` carries the root folder,
+    /// `recursive` and `focusContent`.
+    static let openLiftAdvancedSearch = Notification.Name("openLiftAdvancedSearch")
 }

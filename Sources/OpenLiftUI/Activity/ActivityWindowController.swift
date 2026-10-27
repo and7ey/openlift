@@ -26,7 +26,7 @@ public final class ActivityWindowController: NSWindowController {
         window.minSize = NSSize(width: 480, height: 220)
         window.isReleasedWhenClosed = false
         window.tabbingMode = .disallowed
-        window.center()
+        TestWindowPlacement.place(window)
 
         super.init(window: window)
 

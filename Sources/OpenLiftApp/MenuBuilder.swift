@@ -100,6 +100,7 @@ public enum MenuBuilder {
         menu.addItem(makeItem("Paste", #selector(MainWindowController.paste(_:)), "v", [.command], target))
         menu.addItem(.separator())
         menu.addItem(makeItem("Find in Folder…", #selector(MainWindowController.find(_:)), "f", [.command], target))
+        menu.addItem(makeItem("Advanced Search…", #selector(MainWindowController.showAdvancedSearch(_:)), "f", [.command, .shift], target))
         menu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         item.submenu = menu
         return item

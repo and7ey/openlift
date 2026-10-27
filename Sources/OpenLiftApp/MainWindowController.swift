@@ -20,6 +20,7 @@ public final class MainWindowController: NSWindowController {
     private var infoWindowController: InfoWindowController?
     private var settingsWindowController: SettingsWindowController?
     private var shortcutsWindowController: ShortcutsWindowController?
+    private var searchWindowController: AdvancedSearchWindowController?
     private let shortcuts = ShortcutStore()
 
     private var isSinglePane = false
@@ -73,6 +74,7 @@ public final class MainWindowController: NSWindowController {
         window.tabbingMode = .disallowed
 
         super.init(window: window)
+        TestWindowPlacement.placeMainWindow(window)
 
         configureSplitView(state: state)
         configurePanes()
@@ -80,6 +82,7 @@ public final class MainWindowController: NSWindowController {
         configureToolbar()
         observeModels()
         updateWindowTitle()
+        TestWindowPlacement.placeMainWindow(window)
 
         if state.singlePane {
             isSinglePane = true
@@ -173,12 +176,22 @@ public final class MainWindowController: NSWindowController {
             name: .openLiftGetInfo,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAdvancedSearch(_:)),
+            name: .openLiftAdvancedSearch,
+            object: nil
+        )
     }
 
     private func configureSidebar() {
         sidebarViewController.onSelect = { [weak self] url in
             guard let self else { return }
-            self.activePane.model.navigate(to: url)
+            if self.activePane.model.isSearchResults {
+                self.activeTabs.newTab(at: url)
+            } else {
+                self.activePane.model.navigate(to: url)
+            }
         }
     }
 
@@ -225,7 +238,8 @@ public final class MainWindowController: NSWindowController {
         .moveToOtherPane: #selector(moveToOtherPane(_:)),
         .activity: #selector(showActivity(_:)),
         .singlePane: #selector(toggleSinglePane(_:)),
-        .swapPanes: #selector(swapPanes(_:))
+        .swapPanes: #selector(swapPanes(_:)),
+        .advancedSearch: #selector(showAdvancedSearch(_:))
     ]
 
     @objc func showShortcuts(_ sender: Any?) {
@@ -344,7 +358,9 @@ public final class MainWindowController: NSWindowController {
         alert.messageText = "Go to Folder"
         alert.informativeText = "Enter a path, for example ~/Pictures or /tmp."
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
-        field.stringValue = activePane.model.directory.path
+        field.stringValue = activePane.model.isSearchResults
+            ? NSHomeDirectory()
+            : activePane.model.directory.path
         alert.accessoryView = field
         alert.addButton(withTitle: "Go")
         alert.addButton(withTitle: "Cancel")
@@ -352,13 +368,88 @@ public final class MainWindowController: NSWindowController {
 
         let path = (field.stringValue as NSString).expandingTildeInPath
         guard !path.isEmpty else { return }
-        activePane.model.navigate(to: URL(fileURLWithPath: path, isDirectory: true))
+        let url = URL(fileURLWithPath: path, isDirectory: true)
+        if activePane.model.isSearchResults {
+            activeTabs.newTab(at: url)
+        } else {
+            activePane.model.navigate(to: url)
+        }
     }
 
     // MARK: - Search
 
     @objc func find(_ sender: Any?) {
         activePane.beginSearch()
+    }
+
+    @objc func showAdvancedSearch(_ sender: Any?) {
+        guard !activePane.model.isSearchResults else { return }
+        presentAdvancedSearch(
+            root: activePane.model.directory,
+            recursive: true,
+            focusContent: false
+        )
+    }
+
+    @objc private func handleAdvancedSearch(_ notification: Notification) {
+        guard let root = notification.userInfo?["root"] as? URL else { return }
+        presentAdvancedSearch(
+            root: root,
+            recursive: notification.userInfo?["recursive"] as? Bool ?? true,
+            focusContent: notification.userInfo?["focusContent"] as? Bool ?? false
+        )
+    }
+
+    // MARK: - Testing hooks
+
+    func testNavigate(to url: URL) {
+        activePane.model.navigate(to: url)
+    }
+
+    func testNewTab(at url: URL) {
+        activeTabs.newTab(at: url)
+    }
+
+    func testOpenAdvancedSearch(root: URL, recursive: Bool, focusContent: Bool) {
+        presentAdvancedSearch(root: root, recursive: recursive, focusContent: focusContent)
+    }
+
+    func testSelectTab(_ index: Int) {
+        activeTabs.selectTab(index)
+    }
+
+    /// Invokes a whitelisted selector on the active pane or the controller.
+    @discardableResult
+    func testInvoke(_ name: String) -> Bool {
+        let selector = NSSelectorFromString(name)
+        if activePane.responds(to: selector) {
+            activePane.perform(selector, with: nil)
+            return true
+        }
+        if responds(to: selector) {
+            perform(selector, with: nil)
+            return true
+        }
+        return false
+    }
+
+    private func presentAdvancedSearch(root: URL, recursive: Bool, focusContent: Bool) {
+        guard root.isFileURL else { return }
+        if searchWindowController == nil {
+            let controller = AdvancedSearchWindowController()
+            controller.onShowInTab = { [weak self] items in
+                self?.activeTabs.newSearchResultsTab(items: items)
+            }
+            controller.onOpenFolder = { [weak self] url in
+                self?.activeTabs.newTab(at: url)
+            }
+            searchWindowController = controller
+        }
+        searchWindowController?.present(
+            scope: root,
+            recursive: recursive,
+            focusContent: focusContent
+        )
     }
 
     // MARK: - Quick Look and info
@@ -417,6 +508,11 @@ public final class MainWindowController: NSWindowController {
     }
 
     private func updateWindowTitle() {
+        if activePane.model.isSearchResults {
+            window?.title = "Search Results"
+            window?.subtitle = "Recursive search results"
+            return
+        }
         let name = activePane.model.directory.lastPathComponent
         window?.title = name.isEmpty ? "OpenLift" : name
         window?.subtitle = activePane.model.directory.deletingLastPathComponent().path
@@ -475,10 +571,23 @@ public final class MainWindowController: NSWindowController {
 
     // MARK: - Commands
 
-    @objc public func goBack(_ sender: Any?) { activePane.model.goBack() }
-    @objc public func goForward(_ sender: Any?) { activePane.model.goForward() }
-    @objc public func goUp(_ sender: Any?) { activePane.model.goUp() }
+    @objc public func goBack(_ sender: Any?) {
+        guard !activePane.model.isSearchResults else { return }
+        activePane.model.goBack()
+    }
+
+    @objc public func goForward(_ sender: Any?) {
+        guard !activePane.model.isSearchResults else { return }
+        activePane.model.goForward()
+    }
+
+    @objc public func goUp(_ sender: Any?) {
+        guard !activePane.model.isSearchResults else { return }
+        activePane.model.goUp()
+    }
+
     @objc public func goHome(_ sender: Any?) {
+        guard !activePane.model.isSearchResults else { return }
         activePane.model.navigate(to: URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true))
     }
     @objc public func refresh(_ sender: Any?) { activePane.model.reload() }
@@ -614,7 +723,15 @@ extension MainWindowController: NSMenuItemValidation {
         case #selector(cut(_:)), #selector(copy(_:)):
             return !activePane.selectedItems.isEmpty
         case #selector(paste(_:)):
-            return !FileClipboard.shared.urls.isEmpty
+            return !activePane.model.isSearchResults && !FileClipboard.shared.urls.isEmpty
+        case #selector(newFolder(_:)), #selector(showAdvancedSearch(_:)):
+            return !activePane.model.isSearchResults
+        case #selector(goBack(_:)):
+            return !activePane.model.isSearchResults && activePane.model.canGoBack
+        case #selector(goForward(_:)):
+            return !activePane.model.isSearchResults && activePane.model.canGoForward
+        case #selector(goUp(_:)), #selector(goHome(_:)):
+            return !activePane.model.isSearchResults
         case #selector(quickLook(_:)), #selector(showInfo(_:)):
             return !activePane.selectedItems.isEmpty
         case #selector(compressSelection(_:)):
@@ -740,6 +857,27 @@ extension MainWindowController: NSMenuDelegate {
         panel.begin { response in
             guard response == .OK, let application = panel.url else { return }
             OpenWithMenu.open(file, with: application)
+        }
+    }
+}
+
+
+// MARK: - Toolbar validation
+
+extension MainWindowController: NSToolbarItemValidation {
+    public func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
+        let results = activePane.model.isSearchResults
+        switch item.itemIdentifier.rawValue {
+        case "back":
+            return !results && activePane.model.canGoBack
+        case "forward":
+            return !results && activePane.model.canGoForward
+        case "up":
+            return !results && activePane.model.canGoUp
+        case "newFolder":
+            return !results
+        default:
+            return true
         }
     }
 }

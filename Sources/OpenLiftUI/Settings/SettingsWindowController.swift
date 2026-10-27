@@ -38,7 +38,7 @@ public final class SettingsWindowController: NSWindowController {
         window.title = "Settings"
         window.isReleasedWhenClosed = false
         window.tabbingMode = .disallowed
-        window.center()
+        TestWindowPlacement.place(window)
 
         super.init(window: window)
         configureContent()

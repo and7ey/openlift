@@ -43,6 +43,7 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned
 - [x] Get Info / inspector (⌘I, multi-selection)
 - [x] Open With (menu bar and context menu)
 - [x] Search in current folder (live name filter, ⌘F)
+- [x] Advanced search (recursive, content, type/extension filters, preview, results tab)
 - [x] Create ZIP archive (single item or selection)
 - [x] Icon view (`NSCollectionView`)
 - [x] Settings window (General, Activity, About)

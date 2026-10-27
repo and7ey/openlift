@@ -37,6 +37,7 @@ public enum ShortcutCommand: String, CaseIterable, Codable, Sendable {
     case quickLook
     case getInfo
     case findInFolder
+    case advancedSearch
     case refresh
     case toggleHidden
     case copyToOtherPane
@@ -54,6 +55,7 @@ public enum ShortcutCommand: String, CaseIterable, Codable, Sendable {
         case .quickLook: return "Quick Look"
         case .getInfo: return "Get Info"
         case .findInFolder: return "Find in Folder"
+        case .advancedSearch: return "Advanced Search"
         case .refresh: return "Refresh"
         case .toggleHidden: return "Show Hidden Files"
         case .copyToOtherPane: return "Copy to Other Pane"
@@ -80,6 +82,8 @@ public enum ShortcutCommand: String, CaseIterable, Codable, Sendable {
             return KeyboardShortcut(key: "i", modifiers: [.command])
         case .findInFolder:
             return KeyboardShortcut(key: "f", modifiers: [.command])
+        case .advancedSearch:
+            return KeyboardShortcut(key: "f", modifiers: [.command, .shift])
         case .refresh:
             return KeyboardShortcut(key: "r", modifiers: [.command])
         case .toggleHidden:
