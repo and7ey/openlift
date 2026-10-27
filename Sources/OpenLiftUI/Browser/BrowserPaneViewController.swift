@@ -59,6 +59,12 @@ public final class BrowserPaneViewController: NSViewController {
     }
     /// Selection is remembered by URL so grouping/refresh re-selection is stable.
     private var selectedURLCache: Set<URL> = []
+    /// Selection per visited folder, so going back returns the cursor to the
+    /// folder that was used to enter the child.
+    private var rememberedSelections: [URL: Set<URL>] = [:]
+    private var lastListingDirectory: URL?
+    /// Set when the pane enters a folder; cleared once a cursor is placed.
+    private var pendingSelectionDirectory: URL?
     /// Sorted rows and icon sections are built once per model change; building
     /// them inside cells would sort a 100k-item folder dozens of times.
     private var rowCache: [Row] = []
@@ -426,6 +432,15 @@ public final class BrowserPaneViewController: NSViewController {
             searchField.stringValue = ""
         }
 
+        let directoryChanged = lastListingDirectory != model.directory
+        if directoryChanged {
+            if let previous = lastListingDirectory {
+                rememberedSelections[previous] = selectedURLCache
+            }
+            lastListingDirectory = model.directory
+            pendingSelectionDirectory = model.directory
+        }
+
         rowCache = makeRows()
         iconSectionCache = makeIconSections()
 
@@ -434,31 +449,28 @@ public final class BrowserPaneViewController: NSViewController {
         iconScrollView.isHidden = !iconMode
 
         tableView.reloadData()
-        if !selectedURLCache.isEmpty {
-            var indexes = IndexSet()
-            for (index, row) in rows.enumerated() {
-                if case .item(let item) = row, selectedURLCache.contains(item.url) {
-                    indexes.insert(index)
-                }
-            }
-            tableView.selectRowIndexes(indexes, byExtendingSelection: false)
-        }
-
-        isRestoringSelection = true
         collectionView.reloadData()
-        collectionView.selectionIndexPaths = []
-        if !selectedURLCache.isEmpty {
-            var paths = Set<IndexPath>()
-            for (section, group) in iconSections.enumerated() {
-                for (index, item) in group.items.enumerated() where selectedURLCache.contains(item.url) {
-                    paths.insert(IndexPath(item: index, section: section))
+
+        var selection: Set<URL> = []
+        var shouldScroll = directoryChanged
+        if pendingSelectionDirectory == model.directory {
+            let items = model.displayItems
+            if !items.isEmpty {
+                let available = Set(items.map(\.url))
+                let remembered = rememberedSelections[model.directory]?
+                    .intersection(available) ?? []
+                if remembered.isEmpty {
+                    selection = items.first.map { [$0.url] } ?? []
+                } else {
+                    selection = remembered
                 }
+                pendingSelectionDirectory = nil
+                shouldScroll = true
             }
-            if !paths.isEmpty {
-                collectionView.selectItems(at: paths, scrollPosition: [])
-            }
+        } else {
+            selection = selectedURLCache
         }
-        isRestoringSelection = false
+        applySelection(selection, scroll: shouldScroll)
 
         if gitDirectory != model.directory {
             gitDirectory = model.directory
@@ -468,6 +480,41 @@ public final class BrowserPaneViewController: NSViewController {
         updateProgress()
         syncSortDescriptors()
         refreshGitStatus()
+    }
+
+    /// Applies one selection to both list and icon views. Remembering the URLs
+    /// keeps the cursor stable across refreshes, sorting and view-mode changes.
+    private func applySelection(_ urls: Set<URL>, scroll: Bool) {
+        selectedURLCache = urls
+
+        var indexes = IndexSet()
+        var firstRow: Int?
+        for (index, row) in rows.enumerated() {
+            if case .item(let item) = row, urls.contains(item.url) {
+                indexes.insert(index)
+                if firstRow == nil { firstRow = index }
+            }
+        }
+        tableView.selectRowIndexes(indexes, byExtendingSelection: false)
+        if scroll, let firstRow {
+            tableView.scrollRowToVisible(firstRow)
+        }
+
+        isRestoringSelection = true
+        var paths = Set<IndexPath>()
+        var firstPath: IndexPath?
+        for (section, group) in iconSections.enumerated() {
+            for (index, item) in group.items.enumerated() where urls.contains(item.url) {
+                let path = IndexPath(item: index, section: section)
+                paths.insert(path)
+                if firstPath == nil { firstPath = path }
+            }
+        }
+        collectionView.selectItems(at: paths, scrollPosition: [])
+        if scroll, let firstPath {
+            collectionView.scrollToItems(at: [firstPath], scrollPosition: .nearestHorizontalEdge)
+        }
+        isRestoringSelection = false
     }
 
     // MARK: - Appearance
@@ -511,9 +558,7 @@ public final class BrowserPaneViewController: NSViewController {
               !model.isSearchResults else {
             if gitSnapshot != nil {
                 gitSnapshot = nil
-                tableView.reloadData()
-                collectionView.reloadData()
-                updateStatus()
+                reloadRowsPreservingSelection()
             }
             return
         }
@@ -528,12 +573,19 @@ public final class BrowserPaneViewController: NSViewController {
             }
             guard let self, self.gitRefreshToken == token else { return }
             self.gitSnapshot = snapshot
-            self.tableView.reloadData()
-            if self.model.settings.mode == .icon {
-                self.collectionView.reloadData()
-            }
-            self.updateStatus()
+            self.reloadRowsPreservingSelection()
         }
+    }
+
+    /// Reloads the badge-bearing cells without losing the cursor.
+    private func reloadRowsPreservingSelection() {
+        let selection = selectedURLCache
+        tableView.reloadData()
+        if model.settings.mode == .icon {
+            collectionView.reloadData()
+        }
+        applySelection(selection, scroll: false)
+        updateStatus()
     }
 
     private func gitBadgeColor(for entry: GitStatusEntry) -> NSColor {

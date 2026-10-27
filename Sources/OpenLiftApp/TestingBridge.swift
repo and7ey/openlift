@@ -12,6 +12,22 @@ import OpenLiftCore
 @MainActor
 final class TestingBridge: NSObject {
     private weak var controller: MainWindowController?
+    nonisolated(unsafe) private var observer: NSObjectProtocol?
+
+    /// Plain strings extracted from the notification before hopping onto the
+    /// main actor; distributed notifications may carry arbitrary property-list
+    /// values, so everything else is ignored.
+    private struct Payload: Sendable {
+        var command: String
+        var values: [String: String]
+        var recursive: Bool
+        var focusContent: Bool
+
+        func value(_ key: String) -> String? {
+            let value = values[key]?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return value?.isEmpty == false ? value : nil
+        }
+    }
 
     private static let allowedSelectors: Set<String> = [
         "openSelection:",
@@ -51,66 +67,84 @@ final class TestingBridge: NSObject {
     init(controller: MainWindowController) {
         self.controller = controller
         super.init()
-        DistributedNotificationCenter.default().addObserver(
-            self,
-            selector: #selector(handle(_:)),
-            name: Notification.Name("dev.openlift.test"),
-            object: nil
-        )
+        // A block observer keeps the entry point out of the Objective-C
+        // selector machinery and makes the main-queue hop explicit.
+        observer = DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("dev.openlift.test"),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            let info = notification.userInfo
+            var values: [String: String] = [:]
+            for (key, value) in info ?? [:] {
+                if let key = key as? String, let value = value as? String {
+                    values[key] = value
+                }
+            }
+            let payload = Payload(
+                command: (values["command"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
+                values: values,
+                recursive: info?["recursive"] as? Bool ?? true,
+                focusContent: info?["focusContent"] as? Bool ?? false
+            )
+            MainActor.assumeIsolated {
+                self?.handle(payload)
+            }
+        }
     }
 
     deinit {
-        DistributedNotificationCenter.default().removeObserver(self)
+        if let observer {
+            DistributedNotificationCenter.default().removeObserver(observer)
+        }
     }
 
-    @objc private func handle(_ notification: Notification) {
-        guard let info = notification.userInfo,
-              let command = info["command"] as? String,
-              let controller else { return }
+    private func handle(_ payload: Payload) {
+        guard !payload.command.isEmpty, let controller else { return }
 
-        switch command {
+        switch payload.command {
         case "invoke":
-            guard let name = info["selector"] as? String,
+            guard let name = payload.value("selector"),
                   Self.allowedSelectors.contains(name) else { return }
             _ = controller.testInvoke(name)
 
         case "navigate":
-            guard let path = info["path"] as? String else { return }
+            guard let path = payload.value("path") else { return }
             controller.testNavigate(to: URL(fileURLWithPath: path, isDirectory: true))
 
         case "theme":
-            guard let id = info["id"] as? String else { return }
+            guard let id = payload.value("id") else { return }
             controller.testSetTheme(id)
 
         case "newTab":
-            guard let path = info["path"] as? String else { return }
+            guard let path = payload.value("path") else { return }
             controller.testNewTab(at: URL(fileURLWithPath: path, isDirectory: true))
 
         case "search":
-            guard let path = info["root"] as? String else { return }
+            guard let path = payload.value("root") else { return }
             controller.testOpenAdvancedSearch(
                 root: URL(fileURLWithPath: path, isDirectory: true),
-                recursive: info["recursive"] as? Bool ?? true,
-                focusContent: info["focusContent"] as? Bool ?? false
+                recursive: payload.recursive,
+                focusContent: payload.focusContent
             )
 
         case "selectTab":
-            guard let raw = info["index"] as? String, let index = Int(raw) else { return }
+            guard let raw = payload.value("index"), let index = Int(raw) else { return }
             controller.testSelectTab(index)
 
         case "remote":
-            guard let protoRaw = info["proto"] as? String,
+            guard let protoRaw = payload.value("proto"),
                   let proto = RemoteProtocol(rawValue: protoRaw),
-                  let host = info["host"] as? String else { return }
-            let port = (info["port"] as? String).flatMap(Int.init) ?? proto.defaultPort
+                  let host = payload.value("host") else { return }
+            let port = payload.value("port").flatMap(Int.init) ?? proto.defaultPort
             let connection = RemoteConnection(
                 proto: proto,
                 host: host,
                 port: port,
-                username: info["user"] as? String ?? "",
-                password: info["password"] as? String ?? "",
-                identityFile: info["key"] as? String,
-                path: info["path"] as? String ?? "/"
+                username: payload.value("user") ?? "",
+                password: payload.value("password") ?? "",
+                identityFile: payload.value("key"),
+                path: payload.value("path") ?? "/"
             )
             controller.testOpenRemote(connection)
 

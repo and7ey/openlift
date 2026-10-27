@@ -181,6 +181,11 @@ Design notes:
   files are extracted through the same tools. Double-clicking a zip/tar file
   opens it as a tab; Quick Look and open extract to a cache first, and
   “Extract to Other Pane” copies files or whole folders out.
+- Entering a folder places the cursor on its first item. Each pane remembers
+  the selection per visited folder, so Backspace/Up or Back leaves the cursor
+  on the folder that was used to enter the child; a folder never visited falls
+  back to its first item. Selection memory also keeps the cursor stable across
+  refreshes, sorting and list/icon switches, and is per tab.
 - Git support watches the folder's repository (found with
   `git rev-parse --show-toplevel`) and off the main thread parses
   `git status --porcelain -z`. Changed names get a colored letter (`M`, `A`,
