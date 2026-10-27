@@ -660,6 +660,38 @@ do {
           "WebDAV over TLS uses HTTPS and port 443")
 }
 
+// MARK: - Cloud drives
+
+do {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let home = root.appendingPathComponent("home", isDirectory: true)
+    let cloudStorage = home.appendingPathComponent("Library/CloudStorage", isDirectory: true)
+    for path in [
+        "Library/Mobile Documents/com~apple~CloudDocs",
+        "Dropbox",
+        "Library/CloudStorage/GoogleDrive-me@example.com",
+        "Library/CloudStorage/OneDrive-Personal",
+        "Library/CloudStorage/Box-Box"
+    ] {
+        try FileManager.default.createDirectory(
+            at: home.appendingPathComponent(path, isDirectory: true),
+            withIntermediateDirectories: true
+        )
+    }
+
+    let drives = CloudDriveLocator().locate(home: home, cloudStorage: cloudStorage)
+    let names = drives.map(\.name)
+    check(names.contains("iCloud Drive"), "cloud locator finds iCloud Drive")
+    check(names.contains("Google Drive (me@example.com)"), "cloud locator labels Google Drive accounts")
+    check(names.contains("OneDrive (Personal)"), "cloud locator labels OneDrive accounts")
+    check(names.contains("Box (Box)") || names.contains("Box"), "cloud locator finds Box")
+    check(Set(drives.map(\.url.path)).count == drives.count, "cloud drives are de-duplicated")
+} catch {
+    failures += 1
+    print("FAIL cloud drives: \(error)")
+}
+
 // MARK: - Remote bookmarks
 
 do {
@@ -698,6 +730,77 @@ do {
     check(store.load().count == 1, "bookmarks can be removed")
     store.removeAll()
     check(store.load().isEmpty, "all bookmarks can be forgotten")
+}
+
+// MARK: - Folder comparison and sync
+
+do {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let left = root.appendingPathComponent("left", isDirectory: true)
+    let right = root.appendingPathComponent("right", isDirectory: true)
+    for directory in [left, right, left.appendingPathComponent("sub", isDirectory: true)] {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+
+    try Data("same".utf8).write(to: left.appendingPathComponent("same.txt"))
+    try Data("same".utf8).write(to: right.appendingPathComponent("same.txt"))
+    try Data("left-only".utf8).write(to: left.appendingPathComponent("left.txt"))
+    try Data("right-only".utf8).write(to: right.appendingPathComponent("right.txt"))
+    try Data("old".utf8).write(to: left.appendingPathComponent("changed.txt"))
+    try Data("new value".utf8).write(to: right.appendingPathComponent("changed.txt"))
+    try Data("nested".utf8).write(to: left.appendingPathComponent("sub/nested.txt"))
+
+    let comparator = FolderComparator()
+    let result = try comparator.compare(left: left, right: right)
+    check(result.leftOnlyCount == 3, "folder compare counts left-only files and folders")
+    check(result.rightOnlyCount == 1, "folder compare counts right-only files")
+    check(result.differentCount == 1, "folder compare finds changed files")
+    check(result.sameCount == 1, "folder compare counts identical files")
+    check(
+        result.entries.first(where: { $0.relativePath == "changed.txt" })?.status == .different,
+        "changed files are marked different"
+    )
+
+    let sync = FolderSync()
+    let leftToRight = sync.copy(
+        result.entries.filter { $0.left != nil },
+        direction: .leftToRight,
+        leftRoot: left,
+        rightRoot: right
+    )
+    check(leftToRight.failures.isEmpty, "left-to-right sync succeeds")
+    check(
+        (try? String(contentsOf: right.appendingPathComponent("left.txt"), encoding: .utf8)) == "left-only",
+        "sync copies a left-only file"
+    )
+    check(
+        (try? String(contentsOf: right.appendingPathComponent("sub/nested.txt"), encoding: .utf8)) == "nested",
+        "sync recreates nested folders"
+    )
+    check(
+        (try? String(contentsOf: right.appendingPathComponent("changed.txt"), encoding: .utf8)) == "old",
+        "sync replaces a changed file"
+    )
+
+    let after = try comparator.compare(left: left, right: right)
+    check(after.leftOnlyCount == 0, "nothing remains only on the left after sync")
+    check(after.differentCount == 0, "no differences remain after sync")
+
+    let rightToLeft = sync.copy(
+        after.entries.filter { $0.right != nil },
+        direction: .rightToLeft,
+        leftRoot: left,
+        rightRoot: right
+    )
+    check(rightToLeft.failures.isEmpty, "right-to-left sync succeeds")
+    check(
+        (try? String(contentsOf: left.appendingPathComponent("right.txt"), encoding: .utf8)) == "right-only",
+        "sync can copy in the other direction"
+    )
+} catch {
+    failures += 1
+    print("FAIL folder comparison: \(error)")
 }
 
 // MARK: - Undo records

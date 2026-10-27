@@ -235,11 +235,7 @@ public final class BrowserTabsViewController: NSViewController {
     }
 
     private func tabTitle(for pane: BrowserPaneViewController) -> String {
-        if pane.model.isRemote {
-            return pane.model.fileProvider.displayName
-        }
-        let name = pane.model.directory.lastPathComponent
-        return name.isEmpty ? "/" : name
+        pane.model.displayName
     }
 
     /// A tab's label follows its folder, so any navigation in any tab refreshes the strip.

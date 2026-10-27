@@ -22,6 +22,7 @@ public final class MainWindowController: NSWindowController {
     private var shortcutsWindowController: ShortcutsWindowController?
     private var searchWindowController: AdvancedSearchWindowController?
     private var remoteConnectionController: RemoteConnectionWindowController?
+    private var folderCompareController: FolderCompareWindowController?
     private let bookmarkStore = RemoteBookmarkStore()
     private let shortcuts = ShortcutStore()
 
@@ -390,6 +391,36 @@ public final class MainWindowController: NSWindowController {
         }
     }
 
+    // MARK: - Folder comparison
+
+    @objc func compareFolders(_ sender: Any?) {
+        let left = leftTabs.activePane.model.directory
+        let right = rightTabs.activePane.model.directory
+        guard left.isFileURL, right.isFileURL,
+              !leftTabs.activePane.model.isSearchResults,
+              !rightTabs.activePane.model.isSearchResults,
+              !leftTabs.activePane.model.isRemote,
+              !rightTabs.activePane.model.isRemote else {
+            NSSound.beep()
+            return
+        }
+        guard left.standardizedFileURL != right.standardizedFileURL else {
+            NSSound.beep()
+            return
+        }
+        if folderCompareController == nil {
+            let controller = FolderCompareWindowController()
+            controller.onReload = { [weak self] in
+                guard let self else { return }
+                for pane in self.leftTabs.panes + self.rightTabs.panes {
+                    pane.model.reload()
+                }
+            }
+            folderCompareController = controller
+        }
+        folderCompareController?.present(left: left, right: right)
+    }
+
     // MARK: - Remote
 
     @objc func connectToServer(_ sender: Any?) {
@@ -599,8 +630,7 @@ public final class MainWindowController: NSWindowController {
             window?.subtitle = "Recursive search results"
             return
         }
-        let name = activePane.model.directory.lastPathComponent
-        window?.title = name.isEmpty ? "OpenLift" : name
+        window?.title = activePane.model.displayName
         window?.subtitle = activePane.model.directory.deletingLastPathComponent().path
     }
 
@@ -838,6 +868,11 @@ extension MainWindowController: NSMenuItemValidation {
             return activePane.model.isRemote
                 && !otherPane.model.isRemote
                 && !activePane.selectedItems.isEmpty
+        case #selector(compareFolders(_:)):
+            return !activePane.model.isRemote
+                && !otherPane.model.isRemote
+                && !activePane.model.isSearchResults
+                && !otherPane.model.isSearchResults
         case #selector(uploadToOtherPane(_:)):
             return !activePane.model.isRemote
                 && otherPane.model.isRemote

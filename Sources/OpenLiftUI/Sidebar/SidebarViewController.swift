@@ -57,6 +57,9 @@ public final class SidebarViewController: NSViewController {
         // `.smart` groups are generated from the live system on every load.
         var favorites = store.load().filter { $0.kind != .smart }
         favorites.append(Self.dynamicLocations())
+        if let cloudDrives = Self.dynamicCloudDrives() {
+            favorites.append(cloudDrives)
+        }
         roots = favorites.map(FavoriteNode.init)
         outlineView.reloadData()
         roots.forEach { outlineView.expandItem($0) }
@@ -89,6 +92,21 @@ public final class SidebarViewController: NSViewController {
         }
 
         return Favorite(kind: .smart, name: "Locations", symbol: "externaldrive", children: children)
+    }
+
+    /// Cloud folders kept in sync by installed vendor clients.
+    private static func dynamicCloudDrives() -> Favorite? {
+        let drives = CloudDriveLocator().locate()
+        guard !drives.isEmpty else { return nil }
+        let children = drives.map { drive in
+            Favorite(
+                kind: .path,
+                name: drive.name,
+                path: drive.url.path,
+                symbol: drive.symbol
+            )
+        }
+        return Favorite(kind: .smart, name: "Cloud Drives", symbol: "cloud", children: children)
     }
 
     public override func viewDidAppear() {

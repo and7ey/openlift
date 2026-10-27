@@ -78,6 +78,7 @@ public enum MenuBuilder {
         menu.addItem(makeItem("Move to Other Pane", #selector(MainWindowController.moveToOtherPane(_:)), "m", [.command, .control], target))
         menu.addItem(makeItem("Download to Other Pane", #selector(MainWindowController.downloadToOtherPane(_:)), "d", [.command, .option], target))
         menu.addItem(makeItem("Upload to Other Pane", #selector(MainWindowController.uploadToOtherPane(_:)), "u", [.command, .option], target))
+        menu.addItem(makeItem("Compare Folders…", #selector(MainWindowController.compareFolders(_:)), "c", [.command, .shift], target))
         menu.addItem(.separator())
         menu.addItem(makeItem("Move to Trash", #selector(MainWindowController.moveToTrash(_:)), String(UnicodeScalar(NSBackspaceCharacter)!), [.command], target))
         menu.addItem(.separator())

@@ -71,8 +71,9 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned
   - [ ] Live FTPS verification and SSH key-file picker
 - [x] WebDAV (PROPFIND listing; GET/PUT/MKCOL/MOVE/COPY/DELETE)
 - [ ] S3 / Backblaze B2
-- [ ] Dropbox / Google Drive / OneDrive
-- [ ] Folder sync / compare
+- [x] Cloud drives via installed desktop sync folders (iCloud, Dropbox, Drive, OneDrive, Box)
+  - [ ] Native OAuth providers for machines without the desktop clients
+- [x] Folder compare and copy sync (left↔right, no deletions)
 - [ ] Archive browsing
 - [ ] Git status and actions
 - [x] Batch rename (template tokens, find/replace, numbering, preview)

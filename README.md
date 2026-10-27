@@ -31,6 +31,8 @@ Early development. The local-file MVP is in progress:
 | Activity window (live progress, session log) | done |
 | Quick Look, Get Info, Open With | done |
 | Remote: SFTP/FTP/WebDAV browsing, transfers, mutations, bookmarks | done (FTPS live check pending) |
+| Cloud Drives: iCloud, Dropbox, Google Drive, OneDrive, Box folders | done via desktop clients |
+| Folder compare and copy sync | done (copy-only) |
 | Search: in-folder filter + advanced window (recursive, content, preview) | done |
 | ZIP archives | done |
 | Icon view | done |
@@ -86,7 +88,7 @@ Release builds compile the bridge out.
 The runner covers ordering/grouping, favorites persistence, per-folder view
 settings, tab-aware window state, the local provider (listing, hidden files,
 move, create, delete), file transfers, undo records, the activity log, search,
-archives, advanced search, batch rename, remote listings/bookmarks, WebDAV listings, app settings and shortcuts — 176 checks, all
+archives, advanced search, batch rename, cloud drives, folder compare/sync, remote listings/bookmarks, WebDAV listings, app settings and shortcuts — 194 checks, all
 dependency-free. When Xcode is
 available, `Tests/OpenLiftTests/OpenLiftTests.swift` can be re-enabled as a
 `swift-testing` target in `Package.swift`.
@@ -111,21 +113,24 @@ Sources/
   OpenLiftCore/       platform-independent model, providers, persistence
     Browser/          BrowserModel — listing, history, sorting, grouping, FSEvents
     Model/            FileItem, SortDescriptor, ViewSettings, Favorite
-    Operations/       TransferPlanner, TransferExecutor, SearchEngine, progress
+    Persistence/      FavoritesStore, WindowStateStore, ViewSettingsStore,
+                      CloudDriveLocator
+    Operations/       TransferPlanner, TransferExecutor, SearchEngine,
+                      FolderComparator, FolderSync, progress
     Provider/         FileProvider protocol, LocalFileProvider, SearchResultsProvider,
                       SFTPRemoteProvider, FTPRemoteProvider, WebDAVRemoteProvider,
                       RemoteBookmark, DirectoryWatcher
-    Persistence/      FavoritesStore, WindowStateStore, ViewSettingsStore
   OpenLiftUI/         AppKit views
     Browser/          BrowserTabsViewController, BrowserPaneViewController,
                       PaneTabBarView (path bar, table, status bar)
     Clipboard/        FileClipboard — file URLs + cut marker on NSPasteboard
     Activity/         ActivityWindowController — live progress + session log
     Search/           AdvancedSearchWindowController — criteria, results, preview
-    Remote/           RemoteConnectionWindowController — SFTP/FTP session sheet
+    Remote/           RemoteConnectionWindowController — SFTP/FTP/WebDAV sheet
     Info/             InfoWindowController — Get Info panel
     Preview/          QuickLookController, OpenWithMenu
-    Sidebar/          SidebarViewController (favorites + mounted volumes)
+    Compare/          FolderCompareWindowController — diff table + copy sync
+    Sidebar/          SidebarViewController (favorites, volumes, cloud drives)
   OpenLiftApp/        application shell
     MainWindowController  window, split view, command routing, toolbar
     MenuBuilder           menu bar
@@ -165,6 +170,15 @@ Design notes:
   compress) work, while paste, new folder and navigation into the virtual
   folder are disabled. Results tabs
   are session-only and are not restored on relaunch.
+- Cloud Drives in the sidebar are the folders kept in sync by the vendors'
+  desktop clients (iCloud Drive, Dropbox, Google Drive, OneDrive, Box); they
+  open as normal local folders, so sign-in and conflict handling stay with the
+  vendor.
+- Folder Compare (⇧⌘C) compares both panes recursively by relative path.
+  Files match on size and modification time; packages compare as one item.
+  Differences can be copied left→right or right→left with one click, creating
+  missing subfolders and replacing changed files through a staging name. It
+  never deletes extras, so it is a safe one-way copy, not a mirror.
 - Remote tabs are session-only. WebDAV/WebDAVS use URLSession with PROPFIND
   listings and GET/PUT/MKCOL/MOVE/COPY/DELETE; Basic auth stays in request
   headers and is never persisted. SFTP is driven through the system `sftp`
@@ -227,6 +241,7 @@ See [`docs/spec/mvp.md`](docs/spec/mvp.md) for the full MVP specification and
 | Connect to Server | ⌘K |
 | Download to Other Pane | ⌥⌘D |
 | Upload to Other Pane | ⌥⌘U |
+| Compare Folders | ⇧⌘C |
 | Settings | ⌘, |
 | Show Hidden Files | ⇧⌘. |
 | Show Sidebar | ⌃⌘S |

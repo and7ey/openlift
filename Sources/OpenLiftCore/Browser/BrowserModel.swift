@@ -108,6 +108,15 @@ public final class BrowserModel {
     /// Provider behind this pane; used by remote-specific actions.
     public var fileProvider: FileProvider { provider }
 
+    /// User-facing name of the current location.
+    public var displayName: String {
+        if isRemote { return provider.displayName }
+        if isSearchResults { return "Search Results" }
+        if directory.path.hasSuffix("/com~apple~CloudDocs") { return "iCloud Drive" }
+        let name = directory.lastPathComponent
+        return name.isEmpty ? "/" : name
+    }
+
     public var canGoBack: Bool { !backStack.isEmpty }
     public var canGoForward: Bool { !forwardStack.isEmpty }
     public var canGoUp: Bool { directory.path != "/" }
