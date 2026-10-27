@@ -23,7 +23,8 @@ public enum AppPaths {
 
 /// Persists the sidebar favorite tree as JSON.
 ///
-/// ForkLift stores favorites in a Core Data blob; a plain `Codable` document is
+/// Commercial managers often store favorites in a Core Data blob; a plain
+/// `Codable` document is
 /// enough for the MVP and keeps migrations trivial.
 public final class FavoritesStore: @unchecked Sendable {
     private let fileURL: URL

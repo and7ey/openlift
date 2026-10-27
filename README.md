@@ -3,10 +3,10 @@
 An open-source, native macOS dual-pane file manager and file-transfer client,
 built from scratch in Swift and AppKit.
 
-OpenLift is an independent implementation. It is inspired by the workflow of
-commercial dual-pane managers (ForkLift in particular), but contains no code,
-assets, icons, localizations or other material from them. See
-[Legal](#legal).
+OpenLift is a public, open-source analog of the commercial macOS file manager
+ForkLift. It is an independent implementation inspired by the same dual-pane
+workflow, but contains no code, assets, icons, localizations or other material
+from it. See [Legal](#legal).
 
 ## Status
 

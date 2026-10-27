@@ -54,7 +54,7 @@ public struct FileItem: Identifiable, Hashable, Sendable {
     }
 
     /// A directory the browser may descend into. Packages (`.app`, bundles)
-    /// are treated as files in the list, matching Finder/ForkLift defaults.
+    /// are treated as files in the list, matching Finder defaults.
     public var isBrowsableDirectory: Bool { isDirectory && !isPackage }
 
     /// Human readable kind, e.g. `Folder`, `PNG image`, `Plain text`.

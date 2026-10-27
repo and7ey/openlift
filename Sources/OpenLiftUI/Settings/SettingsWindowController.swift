@@ -133,7 +133,7 @@ public final class SettingsWindowController: NSWindowController {
         versionLabel.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
         let license = secondaryLabel(
             "An independent open-source file manager, MIT licensed. " +
-            "It contains no code, assets, icons or localizations from ForkLift."
+            "Built from scratch in Swift and AppKit."
         )
 
         let root = NSStackView(views: [

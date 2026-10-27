@@ -2,7 +2,7 @@ import Foundation
 
 /// Remembers view settings per folder.
 ///
-/// Finder and ForkLift both let a folder keep its own sort mode, view mode and
+/// Finder and other file managers let a folder keep its own sort mode, view mode and
 /// hidden-file preference. Settings are stored as one JSON document in
 /// `UserDefaults`, keyed by absolute path.
 public final class ViewSettingsStore: @unchecked Sendable {

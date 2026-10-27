@@ -1,6 +1,7 @@
 import Foundation
 
-/// Sort keys exposed by the browser. Mirrors a useful subset of ForkLift's
+/// Sort keys exposed by the browser. Mirrors a useful subset of common
+/// file-manager
 /// column registry; more keys can be added without touching the UI.
 public enum SortKey: String, Codable, CaseIterable, Sendable {
     case name
