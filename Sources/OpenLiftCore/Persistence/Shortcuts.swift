@@ -28,6 +28,53 @@ public struct KeyboardShortcut: Codable, Hashable, Sendable {
     }
 }
 
+/// Function-key spellings accepted by `NSMenuItem.keyEquivalent`.
+public enum ShortcutKey {
+    public static let f1 = "\u{F704}"
+    public static let f2 = "\u{F705}"
+    public static let f3 = "\u{F706}"
+    public static let f4 = "\u{F707}"
+    public static let f5 = "\u{F708}"
+    public static let f6 = "\u{F709}"
+    public static let f7 = "\u{F70A}"
+    public static let f8 = "\u{F70B}"
+    public static let f9 = "\u{F70C}"
+    public static let f10 = "\u{F70D}"
+    public static let f11 = "\u{F70E}"
+    public static let f12 = "\u{F70F}"
+
+    public static let functionKeys: Set<String> = [
+        f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12
+    ]
+
+    public static func isFunctionKey(_ key: String) -> Bool {
+        functionKeys.contains(key)
+    }
+}
+
+/// Ready-made shortcut layouts.
+public enum ShortcutPreset: String, CaseIterable, Codable, Sendable {
+    case standard
+    case classicCommander
+
+    public var title: String {
+        switch self {
+        case .standard: return "OpenLift Default"
+        case .classicCommander: return "Classic Commander"
+        }
+    }
+
+    public var detail: String {
+        switch self {
+        case .standard:
+            return "Command-key shortcuts that OpenLift ships with."
+        case .classicCommander:
+            return "Classic two-pane function keys: F3 view, F5 copy, F6 move, "
+                + "F7 new folder, F8 delete, F2 refresh."
+        }
+    }
+}
+
 /// Commands whose shortcuts can be customized.
 public enum ShortcutCommand: String, CaseIterable, Codable, Sendable {
     case newFolder
@@ -100,6 +147,52 @@ public enum ShortcutCommand: String, CaseIterable, Codable, Sendable {
             return KeyboardShortcut(key: "s", modifiers: [.command, .shift])
         }
     }
+
+    /// The shortcut this command gets in a preset.
+    public func shortcut(in preset: ShortcutPreset) -> KeyboardShortcut? {
+        switch preset {
+        case .standard:
+            return defaultShortcut
+        case .classicCommander:
+            return classicCommanderShortcut
+        }
+    }
+
+    /// Function-key layout modelled on classic two-pane commanders.
+    private var classicCommanderShortcut: KeyboardShortcut? {
+        switch self {
+        case .newFolder:
+            return KeyboardShortcut(key: ShortcutKey.f7, modifiers: [])
+        case .rename:
+            return KeyboardShortcut(key: ShortcutKey.f6, modifiers: [.shift])
+        case .duplicate:
+            return KeyboardShortcut(key: ShortcutKey.f5, modifiers: [.shift])
+        case .moveToTrash:
+            return KeyboardShortcut(key: ShortcutKey.f8, modifiers: [])
+        case .quickLook:
+            return KeyboardShortcut(key: ShortcutKey.f3, modifiers: [])
+        case .getInfo:
+            return KeyboardShortcut(key: "\r", modifiers: [.option])
+        case .findInFolder:
+            return KeyboardShortcut(key: "f", modifiers: [.control])
+        case .advancedSearch:
+            return KeyboardShortcut(key: ShortcutKey.f7, modifiers: [.option])
+        case .refresh:
+            return KeyboardShortcut(key: ShortcutKey.f2, modifiers: [])
+        case .toggleHidden:
+            return KeyboardShortcut(key: "h", modifiers: [.control])
+        case .copyToOtherPane:
+            return KeyboardShortcut(key: ShortcutKey.f5, modifiers: [])
+        case .moveToOtherPane:
+            return KeyboardShortcut(key: ShortcutKey.f6, modifiers: [])
+        case .activity:
+            return KeyboardShortcut(key: ShortcutKey.f12, modifiers: [])
+        case .singlePane:
+            return KeyboardShortcut(key: ShortcutKey.f11, modifiers: [])
+        case .swapPanes:
+            return KeyboardShortcut(key: "u", modifiers: [.control])
+        }
+    }
 }
 
 /// Stores user overrides for menu shortcuts in `UserDefaults`.
@@ -121,6 +214,20 @@ public final class ShortcutStore: @unchecked Sendable {
         self.storageKey = storageKey
     }
 
+    /// Currently selected base layout.
+    public var preset: ShortcutPreset {
+        queue.sync { loadPreset() }
+    }
+
+    /// Switches layout and drops per-command overrides, so the result is a
+    /// complete, predictable preset.
+    public func setPreset(_ preset: ShortcutPreset) {
+        queue.sync {
+            defaults.set(preset.rawValue, forKey: presetKey)
+            defaults.removeObject(forKey: storageKey)
+        }
+    }
+
     /// The effective shortcut, or `nil` when the command has none.
     public func shortcut(for command: ShortcutCommand) -> KeyboardShortcut? {
         queue.sync {
@@ -128,7 +235,7 @@ public final class ShortcutStore: @unchecked Sendable {
                 guard let key = stored.key else { return nil }
                 return KeyboardShortcut(key: key, modifiers: stored.modifiers)
             }
-            return command.defaultShortcut
+            return command.shortcut(in: loadPreset())
         }
     }
 
@@ -153,6 +260,7 @@ public final class ShortcutStore: @unchecked Sendable {
         }
     }
 
+    /// Restore the selected preset's values, keeping the preset choice.
     public func resetAll() {
         queue.sync {
             defaults.removeObject(forKey: storageKey)
@@ -167,6 +275,18 @@ public final class ShortcutStore: @unchecked Sendable {
         ShortcutCommand.allCases.first { other in
             other != command && self.shortcut(for: other) == shortcut
         }
+    }
+
+    private var presetKey: String {
+        storageKey + ".preset"
+    }
+
+    private func loadPreset() -> ShortcutPreset {
+        guard let raw = defaults.string(forKey: presetKey),
+              let preset = ShortcutPreset(rawValue: raw) else {
+            return .standard
+        }
+        return preset
     }
 
     private func loadMap() -> [String: Stored] {

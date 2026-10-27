@@ -15,6 +15,7 @@ enum ShortcutFormatting {
     }
 
     private static func keyName(_ key: String) -> String {
+        if let function = functionKeyNames[key] { return function }
         switch key {
         case "\r": return "↩"
         case "\u{8}": return "⌫"
@@ -25,8 +26,22 @@ enum ShortcutFormatting {
         }
     }
 
+    private static let functionKeyNames: [String: String] = [
+        ShortcutKey.f1: "F1", ShortcutKey.f2: "F2", ShortcutKey.f3: "F3",
+        ShortcutKey.f4: "F4", ShortcutKey.f5: "F5", ShortcutKey.f6: "F6",
+        ShortcutKey.f7: "F7", ShortcutKey.f8: "F8", ShortcutKey.f9: "F9",
+        ShortcutKey.f10: "F10", ShortcutKey.f11: "F11", ShortcutKey.f12: "F12"
+    ]
+
     /// ANSI key equivalents for the physical keys we accept. Storing these
     /// keeps shortcuts independent of the active input source.
+    private static let functionKeyCodes: [UInt16: String] = [
+        122: ShortcutKey.f1, 120: ShortcutKey.f2, 99: ShortcutKey.f3,
+        118: ShortcutKey.f4, 96: ShortcutKey.f5, 97: ShortcutKey.f6,
+        98: ShortcutKey.f7, 100: ShortcutKey.f8, 101: ShortcutKey.f9,
+        109: ShortcutKey.f10, 103: ShortcutKey.f11, 111: ShortcutKey.f12
+    ]
+
     private static let ansiKeys: [UInt16: String] = [
         0: "a", 1: "s", 2: "d", 3: "f", 4: "h", 5: "g", 6: "z", 7: "x",
         8: "c", 9: "v", 11: "b", 12: "q", 13: "w", 14: "e", 15: "r",
@@ -55,10 +70,12 @@ enum ShortcutFormatting {
         case 51: key = "\u{8}"
         case 53: return nil
         default:
+            if let function = functionKeyCodes[event.keyCode] {
+                key = function
             // Use the physical ANSI key rather than the current layout's
             // character, so a shortcut recorded on a Russian layout still
             // matches the same key when the layout switches.
-            if let canonical = ansiKeys[event.keyCode] {
+            } else if let canonical = ansiKeys[event.keyCode] {
                 key = canonical
             } else if let characters = event.charactersIgnoringModifiers?.lowercased(),
                       characters.count == 1 {
@@ -70,7 +87,10 @@ enum ShortcutFormatting {
 
         // Bare letters would swallow typing everywhere; Return and Delete are
         // useful without modifiers, as in the default Rename shortcut.
-        if modifiers.isEmpty, key != "\r", key != "\u{8}" {
+        if modifiers.isEmpty,
+           key != "\r",
+           key != "\u{8}",
+           !ShortcutKey.isFunctionKey(key) {
             return nil
         }
         return KeyboardShortcut(key: key, modifiers: modifiers)
@@ -152,6 +172,8 @@ public final class ShortcutsWindowController: NSWindowController {
     public var conflictTitles: ((KeyboardShortcut, ShortcutCommand) -> [String])?
 
     private let store: ShortcutStore
+    private let presetPopup = NSPopUpButton()
+    private let presetDescription = NSTextField(wrappingLabelWithString: "")
     private let tableView = NSTableView()
     private let scrollView = NSScrollView()
     private let commands = ShortcutCommand.allCases
@@ -159,7 +181,7 @@ public final class ShortcutsWindowController: NSWindowController {
     public init(store: ShortcutStore = ShortcutStore()) {
         self.store = store
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 460),
+            contentRect: NSRect(x: 0, y: 0, width: 580, height: 540),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
@@ -178,6 +200,7 @@ public final class ShortcutsWindowController: NSWindowController {
     }
 
     public func present() {
+        selectPreset(store.preset)
         tableView.reloadData()
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
@@ -187,6 +210,24 @@ public final class ShortcutsWindowController: NSWindowController {
 
     private func configureContent() {
         guard let content = window?.contentView else { return }
+
+        let presetLabel = NSTextField(labelWithString: "Preset:")
+        presetLabel.textColor = .secondaryLabelColor
+        presetLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        presetPopup.addItems(withTitles: ShortcutPreset.allCases.map(\.title))
+        presetPopup.target = self
+        presetPopup.action = #selector(presetChanged(_:))
+        presetPopup.translatesAutoresizingMaskIntoConstraints = false
+
+        let presetRow = NSStackView(views: [presetLabel, presetPopup])
+        presetRow.orientation = .horizontal
+        presetRow.spacing = 8
+        presetRow.translatesAutoresizingMaskIntoConstraints = false
+
+        presetDescription.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        presetDescription.textColor = .secondaryLabelColor
+        presetDescription.translatesAutoresizingMaskIntoConstraints = false
 
         tableView.dataSource = self
         tableView.delegate = self
@@ -212,7 +253,7 @@ public final class ShortcutsWindowController: NSWindowController {
 
         let changeButton = NSButton(title: "Change…", target: self, action: #selector(changeShortcut(_:)))
         let removeButton = NSButton(title: "Remove", target: self, action: #selector(removeShortcut(_:)))
-        let restoreButton = NSButton(title: "Restore Defaults", target: self, action: #selector(restoreDefaults(_:)))
+        let restoreButton = NSButton(title: "Restore Preset", target: self, action: #selector(restoreDefaults(_:)))
         for button in [changeButton, removeButton, restoreButton] {
             button.bezelStyle = .inline
             button.controlSize = .small
@@ -224,6 +265,8 @@ public final class ShortcutsWindowController: NSWindowController {
         hint.textColor = .secondaryLabelColor
         hint.translatesAutoresizingMaskIntoConstraints = false
 
+        content.addSubview(presetRow)
+        content.addSubview(presetDescription)
         content.addSubview(scrollView)
         content.addSubview(hint)
         content.addSubview(changeButton)
@@ -231,7 +274,14 @@ public final class ShortcutsWindowController: NSWindowController {
         content.addSubview(restoreButton)
 
         NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: content.topAnchor),
+            presetRow.topAnchor.constraint(equalTo: content.topAnchor, constant: 14),
+            presetRow.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 12),
+
+            presetDescription.topAnchor.constraint(equalTo: presetRow.bottomAnchor, constant: 4),
+            presetDescription.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 12),
+            presetDescription.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -12),
+
+            scrollView.topAnchor.constraint(equalTo: presetDescription.bottomAnchor, constant: 10),
             scrollView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: hint.topAnchor, constant: -8),
@@ -253,6 +303,46 @@ public final class ShortcutsWindowController: NSWindowController {
 
     // MARK: - Editing
 
+    private func selectPreset(_ preset: ShortcutPreset) {
+        presetPopup.selectItem(at: ShortcutPreset.allCases.firstIndex(of: preset) ?? 0)
+        updatePresetDescription(preset)
+    }
+
+    private func updatePresetDescription(_ preset: ShortcutPreset) {
+        presetDescription.stringValue = preset.detail
+            + " Choosing a preset replaces custom shortcuts."
+    }
+
+    @objc private func presetChanged(_ sender: NSPopUpButton) {
+        let index = sender.indexOfSelectedItem
+        guard index >= 0, index < ShortcutPreset.allCases.count else { return }
+        let preset = ShortcutPreset.allCases[index]
+        let current = store.preset
+        guard preset != current else {
+            updatePresetDescription(preset)
+            return
+        }
+
+        // Custom keys are discarded by a preset switch; ask first when there
+        // is something to lose.
+        if ShortcutCommand.allCases.contains(where: { store.isCustomized($0) }) {
+            let alert = NSAlert()
+            alert.messageText = "Switch to “\(preset.title)”?"
+            alert.informativeText = "This replaces your custom shortcuts with the preset."
+            alert.addButton(withTitle: "Switch")
+            alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else {
+                selectPreset(current)
+                return
+            }
+        }
+
+        store.setPreset(preset)
+        updatePresetDescription(preset)
+        tableView.reloadData()
+        onChange?()
+    }
+
     @objc private func changeShortcut(_ sender: Any?) {
         let row = tableView.selectedRow
         guard row >= 0, row < commands.count else { return }
@@ -261,7 +351,7 @@ public final class ShortcutsWindowController: NSWindowController {
         let recorder = ShortcutRecorderView(frame: NSRect(x: 0, y: 0, width: 280, height: 46))
         let alert = NSAlert()
         alert.messageText = "Shortcut for “\(command.title)”"
-        alert.informativeText = "Press the key combination you want to use."
+        alert.informativeText = "Press the key combination you want to use, including F-keys."
         alert.accessoryView = recorder
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Remove")

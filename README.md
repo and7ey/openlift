@@ -84,7 +84,7 @@ Release builds compile the bridge out.
 The runner covers ordering/grouping, favorites persistence, per-folder view
 settings, tab-aware window state, the local provider (listing, hidden files,
 move, create, delete), file transfers, undo records, the activity log, search,
-archives, advanced search, app settings and shortcuts — 121 checks, all
+archives, advanced search, app settings and shortcuts — 133 checks, all
 dependency-free. When Xcode is
 available, `Tests/OpenLiftTests/OpenLiftTests.swift` can be re-enabled as a
 `swift-testing` target in `Package.swift`.
@@ -207,6 +207,16 @@ See [`docs/spec/mvp.md`](docs/spec/mvp.md) for the full MVP specification and
 | Show Sidebar | ⌃⌘S |
 | Single Pane | ⌘\ |
 | Swap Panes | ⇧⌘S |
+
+Settings → Keyboard Shortcuts… offers two presets:
+
+- **OpenLift Default** — the Command-key layout above.
+- **Classic Commander** — classic two-pane function keys: F2 refresh, F3 view,
+  F5 copy, F6 move, ⇧F6 rename, F7 new folder, F8 delete, F12 activity; ⌃U
+  swaps panes and ⌥F7 opens advanced search.
+
+Individual commands can be re-recorded after choosing a preset. Switching
+presets replaces the custom keys, and the choice is remembered between runs.
 
 ## Legal
 

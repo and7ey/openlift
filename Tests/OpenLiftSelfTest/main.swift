@@ -614,6 +614,45 @@ do {
         Set(ShortcutCommand.allCases.map(\.title)).count == ShortcutCommand.allCases.count,
         "shortcut command titles are unique"
     )
+
+    // Presets.
+    let presetStore = ShortcutStore(defaults: defaults, storageKey: "presets")
+    check(presetStore.preset == .standard, "the default preset is OpenLift Default")
+    check(
+        presetStore.shortcut(for: .newFolder) == KeyboardShortcut(key: "n", modifiers: [.command, .shift]),
+        "the default preset uses the standard new-folder key"
+    )
+
+    presetStore.setPreset(.classicCommander)
+    check(presetStore.preset == .classicCommander, "the classic preset can be selected")
+    check(
+        presetStore.shortcut(for: .newFolder) == KeyboardShortcut(key: ShortcutKey.f7, modifiers: []),
+        "classic new folder is F7"
+    )
+    check(
+        presetStore.shortcut(for: .copyToOtherPane) == KeyboardShortcut(key: ShortcutKey.f5, modifiers: []),
+        "classic copy is F5"
+    )
+    check(
+        presetStore.shortcut(for: .moveToTrash) == KeyboardShortcut(key: ShortcutKey.f8, modifiers: []),
+        "classic delete is F8"
+    )
+    check(ShortcutKey.isFunctionKey(ShortcutKey.f5), "function-key spellings are recognized")
+
+    let classicShortcuts = ShortcutCommand.allCases.compactMap { $0.shortcut(in: .classicCommander) }
+    check(Set(classicShortcuts).count == classicShortcuts.count, "classic shortcuts are unique")
+
+    let persistedPreset = ShortcutStore(defaults: defaults, storageKey: "presets")
+    check(persistedPreset.preset == .classicCommander, "the preset choice persists")
+
+    persistedPreset.set(custom, for: .newFolder)
+    check(persistedPreset.shortcut(for: .newFolder) == custom, "a custom key overrides the preset")
+    persistedPreset.setPreset(.standard)
+    check(
+        persistedPreset.shortcut(for: .newFolder) == KeyboardShortcut(key: "n", modifiers: [.command, .shift]),
+        "switching preset clears custom overrides"
+    )
+    check(!persistedPreset.isCustomized(.newFolder), "switching preset forgets overrides")
 }
 
 // MARK: - Per-folder view settings

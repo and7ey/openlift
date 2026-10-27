@@ -28,7 +28,9 @@ final class TestingBridge: NSObject {
         "searchHereFromMenu:",
         "searchRecursivelyFromMenu:",
         "searchContentsFromMenu:",
-        "filterFromMenu:"
+        "filterFromMenu:",
+        "showShortcuts:",
+        "showSettings:"
     ]
 
     init(controller: MainWindowController) {

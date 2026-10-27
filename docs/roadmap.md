@@ -48,6 +48,7 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned
 - [x] Icon view (`NSCollectionView`)
 - [x] Settings window (General, Activity, About)
 - [x] Keyboard shortcut customization (recorder, conflict check, defaults)
+- [x] Shortcut presets (OpenLift Default, Classic Commander)
 
 ## M4 — Stabilization 🚧
 
