@@ -6,12 +6,16 @@ public enum RemoteProtocol: String, CaseIterable, Codable, Sendable {
     case sftp
     case ftp
     case ftps
+    case webdav
+    case webdavs
 
     public var title: String {
         switch self {
         case .sftp: return "SFTP"
         case .ftp: return "FTP"
         case .ftps: return "FTPS"
+        case .webdav: return "WebDAV"
+        case .webdavs: return "WebDAV (HTTPS)"
         }
     }
 
@@ -19,6 +23,8 @@ public enum RemoteProtocol: String, CaseIterable, Codable, Sendable {
         switch self {
         case .sftp: return 22
         case .ftp, .ftps: return 21
+        case .webdav: return 80
+        case .webdavs: return 443
         }
     }
 
@@ -26,10 +32,12 @@ public enum RemoteProtocol: String, CaseIterable, Codable, Sendable {
         switch self {
         case .sftp: return "sftp"
         case .ftp, .ftps: return "ftp"
+        case .webdav: return "http"
+        case .webdavs: return "https"
         }
     }
 
-    public var isTLS: Bool { self == .ftps }
+    public var isTLS: Bool { self == .ftps || self == .webdavs }
 }
 
 public struct RemoteConnection: Sendable, Equatable {
@@ -115,6 +123,8 @@ public enum RemoteProviderFactory {
             return SFTPRemoteProvider(connection: connection)
         case .ftp, .ftps:
             return FTPRemoteProvider(connection: connection)
+        case .webdav, .webdavs:
+            return WebDAVRemoteProvider(connection: connection)
         }
     }
 }

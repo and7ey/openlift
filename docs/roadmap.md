@@ -69,7 +69,7 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned
   - [x] Remembered server bookmarks (Go ▸ Servers, no passwords)
   - [x] Remote listing parser (UNIX `ls -l` output from SFTP and FTP)
   - [ ] Live FTPS verification and SSH key-file picker
-- [ ] WebDAV
+- [x] WebDAV (PROPFIND listing; GET/PUT/MKCOL/MOVE/COPY/DELETE)
 - [ ] S3 / Backblaze B2
 - [ ] Dropbox / Google Drive / OneDrive
 - [ ] Folder sync / compare

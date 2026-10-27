@@ -215,6 +215,8 @@ public final class RemoteConnectionWindowController: NSWindowController {
             hintLabel.stringValue = "SFTP uses SSH. Leave the password empty to use the SSH agent or keys. The host key is trusted on first use."
         case .ftp, .ftps:
             hintLabel.stringValue = "FTP/FTPS credentials are used for this session only and are not saved."
+        case .webdav, .webdavs:
+            hintLabel.stringValue = "WebDAV uses HTTP basic authentication over HTTP/HTTPS. Credentials are not saved."
         }
     }
 

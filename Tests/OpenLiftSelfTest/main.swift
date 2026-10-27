@@ -601,6 +601,65 @@ do {
     check(RemoteProtocol.ftps.defaultPort == 21, "FTPS uses the FTP port")
 }
 
+// MARK: - WebDAV listings
+
+do {
+    let base = URL(string: "http://example.com/dav/")!
+    let xml = """
+    <?xml version="1.0" encoding="utf-8"?>
+    <D:multistatus xmlns:D="DAV:">
+      <D:response>
+        <D:href>/dav/</D:href>
+        <D:propstat><D:prop>
+          <D:displayname>dav</D:displayname>
+          <D:resourcetype><D:collection/></D:resourcetype>
+        </D:prop></D:propstat>
+      </D:response>
+      <D:response>
+        <D:href>/dav/Notes/</D:href>
+        <D:propstat><D:prop>
+          <D:displayname>Notes</D:displayname>
+          <D:resourcetype><D:collection/></D:resourcetype>
+        </D:prop></D:propstat>
+      </D:response>
+      <D:response>
+        <D:href>/dav/readme.txt</D:href>
+        <D:propstat><D:prop>
+          <D:displayname>readme.txt</D:displayname>
+          <D:resourcetype/>
+          <D:getcontentlength>42</D:getcontentlength>
+          <D:getcontenttype>text/plain</D:getcontenttype>
+          <D:getlastmodified>Mon, 27 Oct 2026 12:00:00 GMT</D:getlastmodified>
+        </D:prop></D:propstat>
+      </D:response>
+      <D:response>
+        <D:href>/dav/.hidden</D:href>
+        <D:propstat><D:prop>
+          <D:displayname>.hidden</D:displayname>
+          <D:resourcetype/>
+          <D:getcontentlength>1</D:getcontentlength>
+        </D:prop></D:propstat>
+      </D:response>
+    </D:multistatus>
+    """
+    let parser = WebDAVListingParser()
+    let items = parser.items(from: Data(xml.utf8), base: base, showHidden: false)
+    check(items.count == 2, "WebDAV parser skips the collection itself and hidden entries")
+    check(items.first(where: { $0.name == "Notes" })?.isDirectory == true, "WebDAV collections become folders")
+    check(items.first(where: { $0.name == "readme.txt" })?.size == 42, "WebDAV parser reads content lengths")
+    check(items.first(where: { $0.name == "readme.txt" })?.modified != nil, "WebDAV parser reads modification dates")
+    check(
+        parser.items(from: Data(xml.utf8), base: base, showHidden: true).contains { $0.name == ".hidden" },
+        "WebDAV parser can include hidden entries"
+    )
+
+    let connection = RemoteConnection(proto: .webdav, host: "example.com")
+    check(connection.rootURL.scheme == "http", "WebDAV uses HTTP URLs")
+    check(connection.proto.defaultPort == 80, "WebDAV defaults to port 80")
+    check(RemoteProtocol.webdavs.defaultPort == 443 && RemoteProtocol.webdavs.urlScheme == "https",
+          "WebDAV over TLS uses HTTPS and port 443")
+}
+
 // MARK: - Remote bookmarks
 
 do {
