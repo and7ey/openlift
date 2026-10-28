@@ -181,6 +181,9 @@ Design notes:
   files are extracted through the same tools. Double-clicking a zip/tar file
   opens it as a tab; Quick Look and open extract to a cache first, and
   “Extract to Other Pane” copies files or whole folders out.
+- Tab and Shift-Tab move focus between the two panes only; the sidebar,
+  toolbar and tab bar never take part in the focus cycle. In single-pane mode
+  Tab returns focus to the visible pane.
 - Entering a folder places the cursor on its first item. Each pane remembers
   the selection per visited folder, so Backspace/Up or Back leaves the cursor
   on the folder that was used to enter the child; a folder never visited falls
@@ -276,6 +279,7 @@ See [`docs/spec/mvp.md`](docs/spec/mvp.md) for the full MVP specification and
 | Upload to Other Pane | ⌥⌘U |
 | Compare Folders | ⇧⌘C |
 | Open Archive | ⌥⌘O |
+| Switch Pane Focus | Tab / ⇧Tab |
 | Open (Commander preset) | Enter |
 | Enclosing Folder (Commander preset) | Backspace |
 | Git Commit | ⌥⌘K |

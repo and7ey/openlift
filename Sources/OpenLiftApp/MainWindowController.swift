@@ -30,6 +30,8 @@ public final class MainWindowController: NSWindowController {
 
     private var isSinglePane = false
     private var activePaneIndex = 0
+    /// Swallows Tab so focus cycles between the two file panes only.
+    nonisolated(unsafe) private var tabKeyMonitor: Any?
 
     private var activeTabs: BrowserTabsViewController {
         activePaneIndex == 0 ? leftTabs : rightTabs
@@ -86,6 +88,7 @@ public final class MainWindowController: NSWindowController {
         configureSidebar()
         configureToolbar()
         observeModels()
+        installTabKeyMonitor()
         applyTheme(themeStore.current, persist: false)
         updateWindowTitle()
         TestWindowPlacement.placeMainWindow(window)
@@ -231,6 +234,75 @@ public final class MainWindowController: NSWindowController {
         leftTabs.activePane.isActivePane = index == 0
         rightTabs.activePane.isActivePane = index == 1
         updateWindowTitle()
+    }
+
+    deinit {
+        if let tabKeyMonitor {
+            NSEvent.removeMonitor(tabKeyMonitor)
+        }
+    }
+
+    // MARK: - Keyboard focus
+
+    /// Tab and Shift-Tab cycle the two panes, never the sidebar, toolbar or
+    /// tab bar. Text fields keep working normally because Tab is a focus
+    /// command there too: editing ends and the other pane takes focus.
+    private func installTabKeyMonitor() {
+        tabKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let keyCode = event.keyCode
+            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let handled = MainActor.assumeIsolated {
+                self?.handleTabKey(
+                    keyCode: keyCode,
+                    modifiers: modifiers,
+                    eventWindow: event.window
+                ) ?? false
+            }
+            return handled ? nil : event
+        }
+    }
+
+    private func handleTabKey(
+        keyCode: UInt16,
+        modifiers: NSEvent.ModifierFlags,
+        eventWindow: NSWindow?
+    ) -> Bool {
+        // Events posted by the test harness carry no window; treat them as
+        // belonging to this window (the app has one main window).
+        guard keyCode == 48,
+              eventWindow === window || eventWindow == nil,
+              let window else { return false }
+        // Caps Lock, Fn and stray flags from synthetic events do not matter;
+        // only shortcuts with Command, Control or Option keep their meaning.
+        let reserved: NSEvent.ModifierFlags = [.command, .control, .option]
+        guard modifiers.intersection(reserved).isEmpty else { return false }
+
+        if isSinglePane {
+            activeTabs.activePane.activate()
+            return true
+        }
+
+        let responder = window.firstResponder
+        let target: Int
+        if focusIsInside(leftTabs, responder: responder) {
+            target = 1
+        } else if focusIsInside(rightTabs, responder: responder) {
+            target = 0
+        } else {
+            // Coming from the sidebar or toolbar: return to the pane that was
+            // active rather than guessing a direction.
+            target = activePaneIndex
+        }
+
+        activatePane(target)
+        (target == 0 ? leftTabs : rightTabs).activePane.activate()
+        return true
+    }
+
+    private func focusIsInside(_ tabs: BrowserTabsViewController, responder: NSResponder?) -> Bool {
+        guard let view = responder as? NSView else { return false }
+        let root = tabs.view
+        return view === root || view.isDescendant(of: root)
     }
 
     // MARK: - Themes
