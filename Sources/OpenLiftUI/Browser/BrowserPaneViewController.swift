@@ -489,6 +489,8 @@ public final class BrowserPaneViewController: NSViewController {
     /// Applies one selection to both list and icon views. Remembering the URLs
     /// keeps the cursor stable across refreshes, sorting and view-mode changes.
     private func applySelection(_ urls: Set<URL>, scroll: Bool) {
+        isRestoringSelection = true
+        defer { isRestoringSelection = false }
         selectedURLCache = urls
 
         var indexes = IndexSet()
@@ -504,7 +506,6 @@ public final class BrowserPaneViewController: NSViewController {
             tableView.scrollRowToVisible(firstRow)
         }
 
-        isRestoringSelection = true
         var paths = Set<IndexPath>()
         var firstPath: IndexPath?
         for (section, group) in iconSections.enumerated() {
@@ -518,7 +519,6 @@ public final class BrowserPaneViewController: NSViewController {
         if scroll, let firstPath {
             collectionView.scrollToItems(at: [firstPath], scrollPosition: .nearestHorizontalEdge)
         }
-        isRestoringSelection = false
     }
 
     // MARK: - Folder sizes
@@ -2379,6 +2379,8 @@ extension BrowserPaneViewController: NSTableViewDataSource, NSTableViewDelegate 
     }
 
     public func tableViewSelectionDidChange(_ notification: Notification) {
+        // Restoring the cursor after a refresh must not steal the active pane.
+        guard !isRestoringSelection else { return }
         selectedURLCache = Set(selectedItems.map(\.url))
         updateStatus()
         if tableView.selectedRowIndexes.isEmpty == false {
