@@ -88,6 +88,7 @@ public enum ShortcutCommand: String, CaseIterable, Codable, Sendable {
     case moveToTrash
     case quickLook
     case getInfo
+    case calculateFolderSize
     case findInFolder
     case advancedSearch
     case refresh
@@ -108,6 +109,7 @@ public enum ShortcutCommand: String, CaseIterable, Codable, Sendable {
         case .moveToTrash: return "Move to Trash"
         case .quickLook: return "Quick Look"
         case .getInfo: return "Get Info"
+        case .calculateFolderSize: return "Calculate Folder Size"
         case .findInFolder: return "Find in Folder"
         case .advancedSearch: return "Advanced Search"
         case .refresh: return "Refresh"
@@ -138,6 +140,8 @@ public enum ShortcutCommand: String, CaseIterable, Codable, Sendable {
             return KeyboardShortcut(key: "y", modifiers: [.command])
         case .getInfo:
             return KeyboardShortcut(key: "i", modifiers: [.command])
+        case .calculateFolderSize:
+            return KeyboardShortcut(key: "s", modifiers: [.command, .shift])
         case .findInFolder:
             return KeyboardShortcut(key: "f", modifiers: [.command])
         case .advancedSearch:
@@ -155,7 +159,7 @@ public enum ShortcutCommand: String, CaseIterable, Codable, Sendable {
         case .singlePane:
             return KeyboardShortcut(key: "\\", modifiers: [.command])
         case .swapPanes:
-            return KeyboardShortcut(key: "s", modifiers: [.command, .shift])
+            return KeyboardShortcut(key: "x", modifiers: [.command, .shift])
         }
     }
 
@@ -188,6 +192,8 @@ public enum ShortcutCommand: String, CaseIterable, Codable, Sendable {
             return KeyboardShortcut(key: ShortcutKey.f3, modifiers: [])
         case .getInfo:
             return KeyboardShortcut(key: "\r", modifiers: [.option])
+        case .calculateFolderSize:
+            return KeyboardShortcut(key: "s", modifiers: [.command, .shift])
         case .findInFolder:
             return KeyboardShortcut(key: "f", modifiers: [.control])
         case .advancedSearch:

@@ -35,6 +35,7 @@ Early development. The local-file MVP is in progress:
 | Folder compare and copy sync | done (copy-only) |
 | Archive browsing (zip/tar, extract) | done |
 | Git: status badges, branch/ahead-behind, stage/unstage, discard, commit | done |
+| Folder size calculation (recursive, on demand) | done |
 | Themes: System, Graphite, Nord, Solarized light/dark | done |
 | Search: in-folder filter + advanced window (recursive, content, preview) | done |
 | ZIP archives | done |
@@ -92,7 +93,7 @@ Release builds compile the bridge out.
 The runner covers ordering/grouping, favorites persistence, per-folder view
 settings, tab-aware window state, the local provider (listing, hidden files,
 move, create, delete), file transfers, undo records, the activity log, search,
-archives, advanced search, batch rename, archive browsing, Git status/actions, themes, cloud drives, folder compare/sync, remote listings/bookmarks, WebDAV listings, app settings and shortcuts — 249 checks, all
+archives, advanced search, batch rename, archive browsing, Git status/actions, themes, cloud drives, folder compare/sync, remote listings/bookmarks, WebDAV listings, app settings and shortcuts — 257 checks, all
 dependency-free. When Xcode is
 available, `Tests/OpenLiftTests/OpenLiftTests.swift` can be re-enabled as a
 `swift-testing` target in `Package.swift`.
@@ -181,6 +182,11 @@ Design notes:
   files are extracted through the same tools. Double-clicking a zip/tar file
   opens it as a tab; Quick Look and open extract to a cache first, and
   “Extract to Other Pane” copies files or whole folders out.
+- Calculate Folder Size (⇧⌘S) walks the selected folders, or every folder in
+  the listing when nothing is selected, and shows the recursive total in the
+  Size column (a “…” while working). Sizes are computed off the main thread
+  without following symlinks, are cached per pane, and files keep their own
+  size. Swap Panes moved to ⇧⌘X to free the shortcut.
 - Tab and Shift-Tab move focus between the two panes only; the sidebar,
   toolbar and tab bar never take part in the focus cycle. In single-pane mode
   Tab returns focus to the visible pane.
@@ -290,7 +296,8 @@ See [`docs/spec/mvp.md`](docs/spec/mvp.md) for the full MVP specification and
 | Show Hidden Files | ⇧⌘. |
 | Show Sidebar | ⌃⌘S |
 | Single Pane | ⌘\ |
-| Swap Panes | ⇧⌘S |
+| Swap Panes | ⇧⌘X |
+| Calculate Folder Size | ⇧⌘S |
 
 Settings → Keyboard Shortcuts… offers two presets:
 

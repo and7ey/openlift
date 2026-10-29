@@ -336,6 +336,7 @@ public final class MainWindowController: NSWindowController {
         .moveToTrash: #selector(moveToTrash(_:)),
         .quickLook: #selector(quickLook(_:)),
         .getInfo: #selector(showInfo(_:)),
+        .calculateFolderSize: #selector(calculateFolderSizes(_:)),
         .findInFolder: #selector(find(_:)),
         .refresh: #selector(refresh(_:)),
         .toggleHidden: #selector(toggleHiddenFiles(_:)),
@@ -872,6 +873,10 @@ public final class MainWindowController: NSWindowController {
         presentInfo(for: activePane.selectedItems.map(\.url))
     }
 
+    @objc func calculateFolderSizes(_ sender: Any?) {
+        activePane.calculateFolderSizes()
+    }
+
     @objc private func handleGetInfo(_ notification: Notification) {
         guard let urls = notification.userInfo?["urls"] as? [URL], !urls.isEmpty else { return }
         presentInfo(for: urls)
@@ -1187,6 +1192,12 @@ extension MainWindowController: NSMenuItemValidation {
             return !activePane.model.isSearchResults && !activePane.model.isArchive
         case #selector(renameSelection(_:)), #selector(moveToTrash(_:)):
             return !activePane.model.isArchive && !activePane.selectedItems.isEmpty
+        case #selector(calculateFolderSizes(_:)):
+            return !activePane.model.isRemote
+                && !activePane.model.isArchive
+                && !activePane.model.isSearchResults
+                && (activePane.selectedItems.contains(where: \.isDirectory)
+                    || activePane.model.displayItems.contains(where: \.isDirectory))
         case #selector(showAdvancedSearch(_:)):
             return !activePane.model.isRemote
                 && !activePane.model.isArchive

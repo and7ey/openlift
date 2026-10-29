@@ -74,6 +74,7 @@ public enum MenuBuilder {
         openWithItem.submenu = openWithMenu
         menu.addItem(openWithItem)
         menu.addItem(makeItem("Get Info", #selector(MainWindowController.showInfo(_:)), "i", [.command], target))
+        menu.addItem(makeItem("Calculate Folder Size", #selector(MainWindowController.calculateFolderSizes(_:)), "s", [.command, .shift], target))
         menu.addItem(makeItem("Quick Look", #selector(MainWindowController.quickLook(_:)), "y", [.command], target))
         menu.addItem(.separator())
         menu.addItem(makeItem("Copy to Other Pane", #selector(MainWindowController.copyToOtherPane(_:)), "c", [.command, .control], target))
@@ -154,7 +155,7 @@ public enum MenuBuilder {
         menu.addItem(.separator())
         menu.addItem(makeItem("Show Sidebar", #selector(MainWindowController.toggleSidebar(_:)), "s", [.command, .control], target))
         menu.addItem(makeItem("Single Pane", #selector(MainWindowController.toggleSinglePane(_:)), "\\", [.command], target))
-        menu.addItem(makeItem("Swap Panes", #selector(MainWindowController.swapPanes(_:)), "s", [.command, .shift], target))
+        menu.addItem(makeItem("Swap Panes", #selector(MainWindowController.swapPanes(_:)), "x", [.command, .shift], target))
         menu.addItem(.separator())
         menu.addItem(withTitle: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
             .keyEquivalentModifierMask = [.command, .control]

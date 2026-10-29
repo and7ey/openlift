@@ -991,6 +991,39 @@ do {
     print("FAIL git integration: \(error)")
 }
 
+// MARK: - Folder sizes
+
+do {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    try Data("abc".utf8).write(to: root.appendingPathComponent("a.txt"))
+    let sub = root.appendingPathComponent("sub", isDirectory: true)
+    let deep = sub.appendingPathComponent("deep", isDirectory: true)
+    try FileManager.default.createDirectory(at: deep, withIntermediateDirectories: true)
+    try Data("12345".utf8).write(to: sub.appendingPathComponent("b.txt"))
+    try Data("1234567".utf8).write(to: deep.appendingPathComponent("c.txt"))
+    let empty = root.appendingPathComponent("empty", isDirectory: true)
+    try FileManager.default.createDirectory(at: empty, withIntermediateDirectories: true)
+
+    let total = await FolderSizer.size(of: root)
+    check(total == 15, "folder sizes add every nested file")
+    let emptySize = await FolderSizer.size(of: empty)
+    check(emptySize == 0, "empty folders have a zero size")
+    let subSize = await FolderSizer.size(of: sub)
+    check(subSize == 12, "subfolder sizes only include their own contents")
+
+    try FileManager.default.createSymbolicLink(
+        at: sub.appendingPathComponent("link"),
+        withDestinationURL: root.appendingPathComponent("a.txt")
+    )
+    let withLink = await FolderSizer.size(of: root)
+    check(withLink == 15, "symlinks are not followed or counted")
+
+    let missing = root.appendingPathComponent("missing", isDirectory: true)
+    let missingSize = await FolderSizer.size(of: missing)
+    check(missingSize == nil, "missing folders have no size")
+}
+
 // MARK: - Unique destinations
 
 do {
@@ -1230,6 +1263,21 @@ do {
         ShortcutCommand.goUp.defaultShortcut
             == KeyboardShortcut(key: ShortcutKey.upArrow, modifiers: [.command]),
         "the standard preset keeps Command-Up for the enclosing folder"
+    )
+    check(
+        ShortcutCommand.calculateFolderSize.defaultShortcut
+            == KeyboardShortcut(key: "s", modifiers: [.command, .shift]),
+        "folder sizes are on Command-Shift-S"
+    )
+    check(
+        ShortcutCommand.swapPanes.defaultShortcut
+            == KeyboardShortcut(key: "x", modifiers: [.command, .shift]),
+        "swap panes moved off Command-Shift-S"
+    )
+    check(
+        ShortcutCommand.calculateFolderSize.shortcut(in: .classicCommander)
+            == KeyboardShortcut(key: "s", modifiers: [.command, .shift]),
+        "classic layout keeps Command-Shift-S for folder sizes"
     )
 
     let classicShortcuts = ShortcutCommand.allCases.compactMap { $0.shortcut(in: .classicCommander) }

@@ -65,6 +65,10 @@ public final class BrowserPaneViewController: NSViewController {
     private var lastListingDirectory: URL?
     /// Set when the pane enters a folder; cleared once a cursor is placed.
     private var pendingSelectionDirectory: URL?
+    /// Recursive folder sizes calculated on demand, keyed by folder URL.
+    private var folderSizes: [URL: Int64] = [:]
+    private var pendingFolderSizes: Set<URL> = []
+    private var folderSizeToken = UUID()
     /// Sorted rows and icon sections are built once per model change; building
     /// them inside cells would sort a 100k-item folder dozens of times.
     private var rowCache: [Row] = []
@@ -515,6 +519,72 @@ public final class BrowserPaneViewController: NSViewController {
             collectionView.scrollToItems(at: [firstPath], scrollPosition: .nearestHorizontalEdge)
         }
         isRestoringSelection = false
+    }
+
+    // MARK: - Folder sizes
+
+    /// Calculates recursive sizes for the selected folders, or for every
+    /// folder in the listing when nothing is selected.
+    public func calculateFolderSizes() {
+        guard model.directory.isFileURL,
+              !model.isRemote,
+              !model.isArchive,
+              !model.isSearchResults else {
+            NSSound.beep()
+            return
+        }
+
+        let selection = selectedItems
+        let folders: [FileItem]
+        if selection.isEmpty {
+            folders = model.displayItems.filter(\.isDirectory)
+        } else {
+            folders = selection.filter(\.isDirectory)
+        }
+        guard !folders.isEmpty else {
+            NSSound.beep()
+            return
+        }
+
+        let urls = folders.map(\.url)
+        let token = UUID()
+        folderSizeToken = token
+        pendingFolderSizes.removeAll()
+        for url in urls {
+            folderSizes.removeValue(forKey: url)
+            pendingFolderSizes.insert(url)
+        }
+        reloadRows(containing: Set(urls))
+        updateStatus()
+
+        Task { [weak self] in
+            guard let self else { return }
+            for url in urls {
+                let size = await FolderSizer.size(of: url)
+                guard self.folderSizeToken == token else { return }
+                self.pendingFolderSizes.remove(url)
+                if let size {
+                    self.folderSizes[url] = size
+                }
+                self.reloadRows(containing: [url])
+            }
+            self.updateStatus()
+        }
+    }
+
+    private func reloadRows(containing urls: Set<URL>) {
+        guard !urls.isEmpty else { return }
+        var indexes = IndexSet()
+        for (index, row) in rows.enumerated() {
+            if case .item(let item) = row, urls.contains(item.url) {
+                indexes.insert(index)
+            }
+        }
+        guard !indexes.isEmpty else { return }
+        tableView.reloadData(
+            forRowIndexes: indexes,
+            columnIndexes: IndexSet(integersIn: 0..<tableView.numberOfColumns)
+        )
     }
 
     // MARK: - Appearance
@@ -2245,7 +2315,15 @@ extension BrowserPaneViewController: NSTableViewDataSource, NSTableViewDelegate 
                 textField.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
                 textField.textColor = .secondaryLabelColor
             case "size":
-                textField.stringValue = item.isDirectory ? "--" : Formatting.size(item.size)
+                if !item.isDirectory {
+                    textField.stringValue = Formatting.size(item.size)
+                } else if let size = folderSizes[item.url] {
+                    textField.stringValue = Formatting.size(size)
+                } else if pendingFolderSizes.contains(item.url) {
+                    textField.stringValue = "…"
+                } else {
+                    textField.stringValue = "--"
+                }
             case "kind":
                 textField.stringValue = item.kind
             case "modified":
