@@ -336,6 +336,7 @@ public final class MainWindowController: NSWindowController {
         .moveToTrash: #selector(moveToTrash(_:)),
         .quickLook: #selector(quickLook(_:)),
         .getInfo: #selector(showInfo(_:)),
+        .editSelection: #selector(editSelection(_:)),
         .calculateFolderSize: #selector(calculateFolderSizes(_:)),
         .findInFolder: #selector(find(_:)),
         .refresh: #selector(refresh(_:)),
@@ -869,6 +870,10 @@ public final class MainWindowController: NSWindowController {
         activePane.performQuickLook()
     }
 
+    @objc func editSelection(_ sender: Any?) {
+        activePane.editSelection()
+    }
+
     @objc func showInfo(_ sender: Any?) {
         presentInfo(for: activePane.selectedItems.map(\.url))
     }
@@ -1192,6 +1197,10 @@ extension MainWindowController: NSMenuItemValidation {
             return !activePane.model.isSearchResults && !activePane.model.isArchive
         case #selector(renameSelection(_:)), #selector(moveToTrash(_:)):
             return !activePane.model.isArchive && !activePane.selectedItems.isEmpty
+        case #selector(editSelection(_:)):
+            return !activePane.model.isRemote
+                && !activePane.model.isArchive
+                && activePane.selectedItems.contains { !$0.isDirectory }
         case #selector(calculateFolderSizes(_:)):
             return !activePane.model.isRemote
                 && !activePane.model.isArchive

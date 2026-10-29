@@ -361,6 +361,7 @@ public final class BrowserPaneViewController: NSViewController {
         openWithMenu.delegate = self
         openWithItem.submenu = openWithMenu
         menu.addItem(openWithItem)
+        menu.addItem(withTitle: "Edit", action: #selector(editSelectionAction), keyEquivalent: "")
         menu.addItem(withTitle: "Open in Other Pane", action: #selector(openInOtherPane), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quick Look", action: #selector(quickLookAction), keyEquivalent: "")
@@ -1159,6 +1160,51 @@ public final class BrowserPaneViewController: NSViewController {
 
     @objc func quickLookAction() {
         performQuickLook()
+    }
+
+    /// Opens the selected files in the configured editor (TextEdit by default).
+    public func editSelection() {
+        guard !model.isRemote, !model.isArchive else {
+            NSSound.beep()
+            return
+        }
+        let files = selectedItems.filter { !$0.isDirectory }
+        guard !files.isEmpty else {
+            NSSound.beep()
+            return
+        }
+        let editorPath = EditorStore.shared.resolvedApplicationPath
+        guard FileManager.default.fileExists(atPath: editorPath) else {
+            present(
+                error: NSError(
+                    domain: "dev.openlift.editor",
+                    code: 1,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "The configured editor “\(EditorStore.shared.displayName)” could not be found."
+                    ]
+                ),
+                title: "Could not edit the selection"
+            )
+            return
+        }
+
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.open(
+            files.map(\.url),
+            withApplicationAt: URL(fileURLWithPath: editorPath),
+            configuration: configuration
+        ) { [weak self] _, error in
+            guard let error else { return }
+            Task { @MainActor in
+                self?.present(error: error, title: "Could not open the editor")
+            }
+        }
+    }
+
+    @objc func editSelectionAction() {
+        editSelection()
     }
 
     @objc func copyPathAction() {
@@ -2503,6 +2549,11 @@ extension BrowserPaneViewController: NSSearchFieldDelegate {
 
 extension BrowserPaneViewController: NSMenuItemValidation {
     public func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(editSelectionAction) {
+            return !model.isRemote
+                && !model.isArchive
+                && selectedItems.contains { !$0.isDirectory }
+        }
         if menuItem.action == #selector(copyPathAction) {
             return !model.isArchive && !selectedItems.isEmpty
         }

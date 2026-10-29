@@ -865,6 +865,42 @@ do {
     print("FAIL archive browsing: \(error)")
 }
 
+// MARK: - Editor preference
+
+do {
+    let suite = "dev.openlift.selftest.editor-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defaults.removePersistentDomain(forName: suite)
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    let store = EditorStore(defaults: defaults, storageKey: "editor")
+    check(store.applicationPath == nil, "no custom editor is stored by default")
+    check(store.displayName == "TextEdit", "the default editor is TextEdit")
+    check(!store.isCustomized, "the default editor is not customized")
+
+    let custom = FileManager.default.temporaryDirectory
+        .appendingPathComponent("OpenLiftEditor-\(UUID().uuidString).app", isDirectory: true)
+    try FileManager.default.createDirectory(at: custom, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: custom) }
+    store.setApplicationPath(custom.path)
+    check(store.resolvedApplicationPath == custom.path, "a chosen editor is used")
+    check(store.displayName == custom.deletingPathExtension().lastPathComponent, "the editor name is shown")
+    check(store.isCustomized, "a chosen editor is marked as customized")
+
+    let reloaded = EditorStore(defaults: defaults, storageKey: "editor")
+    check(reloaded.resolvedApplicationPath == custom.path, "the editor choice persists")
+
+    reloaded.setApplicationPath("/missing/Nowhere.app")
+    check(
+        reloaded.resolvedApplicationPath == EditorStore.defaultApplicationPath,
+        "a missing editor falls back to TextEdit"
+    )
+
+    reloaded.resetToDefault()
+    check(reloaded.applicationPath == nil, "reset forgets the custom editor")
+    check(!reloaded.isCustomized, "reset returns to the default")
+}
+
 // MARK: - Themes
 
 do {
@@ -1268,6 +1304,16 @@ do {
         ShortcutCommand.calculateFolderSize.defaultShortcut
             == KeyboardShortcut(key: "s", modifiers: [.command, .shift]),
         "folder sizes are on Command-Shift-S"
+    )
+    check(
+        ShortcutCommand.editSelection.defaultShortcut
+            == KeyboardShortcut(key: "e", modifiers: [.command]),
+        "edit is on Command-E"
+    )
+    check(
+        ShortcutCommand.editSelection.shortcut(in: .classicCommander)
+            == KeyboardShortcut(key: ShortcutKey.f4, modifiers: []),
+        "classic edit is F4"
     )
     check(
         ShortcutCommand.swapPanes.defaultShortcut

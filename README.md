@@ -37,6 +37,7 @@ Early development. The local-file MVP is in progress:
 | Git: status badges, branch/ahead-behind, stage/unstage, discard, commit | done |
 | Folder size calculation (recursive, on demand) | done |
 | Copy Path (item and path-bar menus) | done |
+| Edit files in an external editor (TextEdit default, configurable) | done |
 | Themes: System, Graphite, Nord, Solarized light/dark | done |
 | Search: in-folder filter + advanced window (recursive, content, preview) | done |
 | ZIP archives | done |
@@ -94,7 +95,7 @@ Release builds compile the bridge out.
 The runner covers ordering/grouping, favorites persistence, per-folder view
 settings, tab-aware window state, the local provider (listing, hidden files,
 move, create, delete), file transfers, undo records, the activity log, search,
-archives, advanced search, batch rename, archive browsing, Git status/actions, themes, cloud drives, folder compare/sync, remote listings/bookmarks, WebDAV listings, app settings and shortcuts — 257 checks, all
+archives, advanced search, batch rename, archive browsing, Git status/actions, themes, cloud drives, folder compare/sync, remote listings/bookmarks, WebDAV listings, app settings and shortcuts — 269 checks, all
 dependency-free. When Xcode is
 available, `Tests/OpenLiftTests/OpenLiftTests.swift` can be re-enabled as a
 `swift-testing` target in `Package.swift`.
@@ -120,7 +121,7 @@ Sources/
     Browser/          BrowserModel — listing, history, sorting, grouping, FSEvents
     Model/            FileItem, SortDescriptor, ViewSettings, Favorite
     Persistence/      FavoritesStore, WindowStateStore, ViewSettingsStore,
-                      ThemeStore, CloudDriveLocator
+                      ThemeStore, EditorStore, CloudDriveLocator
     Operations/       TransferPlanner, TransferExecutor, SearchEngine,
                       FolderComparator, FolderSync, progress
     Git/              GitClient — porcelain status parser and stage/commit actions
@@ -183,6 +184,11 @@ Design notes:
   files are extracted through the same tools. Double-clicking a zip/tar file
   opens it as a tab; Quick Look and open extract to a cache first, and
   “Extract to Other Pane” copies files or whole folders out.
+- Edit (⌘E, F4 in the Commander preset) opens selected files in an external
+  editor. TextEdit is the default; Settings ▸ General lets you choose any
+  application, stored by path, with “Use TextEdit” to reset. The command is
+  disabled for folders and for remote or archive panes, and the same action
+  is in the item context menu.
 - “Copy Path” is available from the context menu of a file or folder and from
   the path bar above each pane. Right-clicking a breadcrumb copies that
   component's path; right-clicking the empty part of the bar copies the
@@ -291,6 +297,8 @@ See [`docs/spec/mvp.md`](docs/spec/mvp.md) for the full MVP specification and
 | Compare Folders | ⇧⌘C |
 | Open Archive | ⌥⌘O |
 | Switch Pane Focus | Tab / ⇧Tab |
+| Edit | ⌘E |
+| Edit (Commander preset) | F4 |
 | Open (Commander preset) | Enter |
 | Enclosing Folder (Commander preset) | Backspace |
 | Git Commit | ⌥⌘K |

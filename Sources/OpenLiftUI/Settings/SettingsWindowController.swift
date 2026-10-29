@@ -1,5 +1,6 @@
 import AppKit
 import OpenLiftCore
+import UniformTypeIdentifiers
 
 /// App settings: view preferences for open folders, history size and About.
 ///
@@ -26,13 +27,16 @@ public final class SettingsWindowController: NSWindowController {
         action: nil
     )
     private let themePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let editorLabel = NSTextField(labelWithString: "")
+    private let chooseEditorButton = NSButton(title: "Choose…", target: nil, action: nil)
+    private let resetEditorButton = NSButton(title: "Use TextEdit", target: nil, action: nil)
     private let limitLabel = NSTextField(labelWithString: "50")
     private let limitStepper = NSStepper()
     private let versionLabel = NSTextField(labelWithString: "")
 
     public init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 510),
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 545),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -44,6 +48,7 @@ public final class SettingsWindowController: NSWindowController {
 
         super.init(window: window)
         configureContent()
+        updateEditorLabel()
     }
 
     @available(*, unavailable)
@@ -61,6 +66,7 @@ public final class SettingsWindowController: NSWindowController {
         if let index = themePopUp.itemArray.firstIndex(where: { $0.representedObject as? String == theme.id }) {
             themePopUp.selectItem(at: index)
         }
+        updateEditorLabel()
         showHiddenButton.state = showHidden ? .on : .off
         foldersFirstButton.state = foldersFirst ? .on : .off
         limitStepper.integerValue = limit
@@ -125,8 +131,29 @@ public final class SettingsWindowController: NSWindowController {
         appearanceStack.alignment = .leading
         appearanceStack.spacing = 8
 
+        editorLabel.lineBreakMode = .byTruncatingMiddle
+        editorLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 220).isActive = true
+        chooseEditorButton.target = self
+        chooseEditorButton.action = #selector(chooseEditor(_:))
+        chooseEditorButton.bezelStyle = .inline
+        chooseEditorButton.controlSize = .small
+        resetEditorButton.target = self
+        resetEditorButton.action = #selector(resetEditor(_:))
+        resetEditorButton.bezelStyle = .inline
+        resetEditorButton.controlSize = .small
+
+        let editorRow = NSStackView(views: [
+            NSTextField(labelWithString: "Edit files with:"),
+            editorLabel,
+            chooseEditorButton,
+            resetEditorButton
+        ])
+        editorRow.orientation = .horizontal
+        editorRow.spacing = 8
+
         let generalHeader = header("General")
         let generalStack = NSStackView(views: [
+            editorRow,
             showHiddenButton,
             foldersFirstButton,
             shortcutsButton,
@@ -227,6 +254,30 @@ public final class SettingsWindowController: NSWindowController {
     }
 
     // MARK: - Actions
+
+    @objc private func chooseEditor(_ sender: Any?) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
+        panel.prompt = "Use Editor"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        EditorStore.shared.setApplicationPath(url.path)
+        updateEditorLabel()
+    }
+
+    @objc private func resetEditor(_ sender: Any?) {
+        EditorStore.shared.resetToDefault()
+        updateEditorLabel()
+    }
+
+    private func updateEditorLabel() {
+        editorLabel.stringValue = EditorStore.shared.displayName
+        editorLabel.toolTip = EditorStore.shared.resolvedApplicationPath
+        resetEditorButton.isEnabled = EditorStore.shared.isCustomized
+    }
 
     @objc private func themeChanged(_ sender: NSPopUpButton) {
         guard let id = sender.selectedItem?.representedObject as? String,

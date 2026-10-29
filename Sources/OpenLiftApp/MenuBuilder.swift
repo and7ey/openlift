@@ -66,6 +66,7 @@ public enum MenuBuilder {
         menu.addItem(makeItem("Compress", #selector(MainWindowController.compressSelection(_:)), "", [], target))
         menu.addItem(.separator())
         menu.addItem(makeItem("Open", #selector(MainWindowController.openSelection(_:)), "o", [.command], target))
+        menu.addItem(makeItem("Edit", #selector(MainWindowController.editSelection(_:)), "e", [.command], target))
         menu.addItem(makeItem("Open Archive…", #selector(MainWindowController.openArchive(_:)), "o", [.command, .option], target))
         let openWithItem = NSMenuItem(title: "Open With", action: nil, keyEquivalent: "")
         let openWithMenu = NSMenu(title: "Open With")

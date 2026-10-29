@@ -88,6 +88,7 @@ public enum ShortcutCommand: String, CaseIterable, Codable, Sendable {
     case moveToTrash
     case quickLook
     case getInfo
+    case editSelection
     case calculateFolderSize
     case findInFolder
     case advancedSearch
@@ -109,6 +110,7 @@ public enum ShortcutCommand: String, CaseIterable, Codable, Sendable {
         case .moveToTrash: return "Move to Trash"
         case .quickLook: return "Quick Look"
         case .getInfo: return "Get Info"
+        case .editSelection: return "Edit"
         case .calculateFolderSize: return "Calculate Folder Size"
         case .findInFolder: return "Find in Folder"
         case .advancedSearch: return "Advanced Search"
@@ -140,6 +142,8 @@ public enum ShortcutCommand: String, CaseIterable, Codable, Sendable {
             return KeyboardShortcut(key: "y", modifiers: [.command])
         case .getInfo:
             return KeyboardShortcut(key: "i", modifiers: [.command])
+        case .editSelection:
+            return KeyboardShortcut(key: "e", modifiers: [.command])
         case .calculateFolderSize:
             return KeyboardShortcut(key: "s", modifiers: [.command, .shift])
         case .findInFolder:
@@ -192,6 +196,8 @@ public enum ShortcutCommand: String, CaseIterable, Codable, Sendable {
             return KeyboardShortcut(key: ShortcutKey.f3, modifiers: [])
         case .getInfo:
             return KeyboardShortcut(key: "\r", modifiers: [.option])
+        case .editSelection:
+            return KeyboardShortcut(key: ShortcutKey.f4, modifiers: [])
         case .calculateFolderSize:
             return KeyboardShortcut(key: "s", modifiers: [.command, .shift])
         case .findInFolder:
