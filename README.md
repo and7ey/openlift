@@ -36,6 +36,7 @@ Early development. The local-file MVP is in progress:
 | Archive browsing (zip/tar, extract) | done |
 | Git: status badges, branch/ahead-behind, stage/unstage, discard, commit | done |
 | Folder size calculation (recursive, on demand) | done |
+| Copy Path (item and path-bar menus) | done |
 | Themes: System, Graphite, Nord, Solarized light/dark | done |
 | Search: in-folder filter + advanced window (recursive, content, preview) | done |
 | ZIP archives | done |
@@ -182,6 +183,10 @@ Design notes:
   files are extracted through the same tools. Double-clicking a zip/tar file
   opens it as a tab; Quick Look and open extract to a cache first, and
   “Extract to Other Pane” copies files or whole folders out.
+- “Copy Path” is available from the context menu of a file or folder and from
+  the path bar above each pane. Right-clicking a breadcrumb copies that
+  component's path; right-clicking the empty part of the bar copies the
+  current folder. Multiple selected items copy one path per line.
 - Calculate Folder Size (⇧⌘S) walks the selected folders, or every folder in
   the listing when nothing is selected, and shows the recursive total in the
   Size column (a “…” while working). Sizes are computed off the main thread

@@ -21,7 +21,7 @@ public final class BrowserPaneViewController: NSViewController {
     /// Called with a reversible record after a mutating operation succeeds.
     public var onOperation: ((FileOperationRecord) -> Void)?
 
-    private let pathControl = NSPathControl()
+    private let pathControl = PathBarControl()
     private let remotePathLabel = NSTextField(labelWithString: "")
     private let searchOptionsButton = NSButton()
     private var pathHeight: NSLayoutConstraint?
@@ -365,6 +365,7 @@ public final class BrowserPaneViewController: NSViewController {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quick Look", action: #selector(quickLookAction), keyEquivalent: "")
         menu.addItem(withTitle: "Get Info", action: #selector(getInfoAction), keyEquivalent: "")
+        menu.addItem(withTitle: "Copy Path", action: #selector(copyPathAction), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Cut", action: #selector(cut(_:)), keyEquivalent: "")
         menu.addItem(withTitle: "Copy", action: #selector(copy(_:)), keyEquivalent: "")
@@ -1160,6 +1161,15 @@ public final class BrowserPaneViewController: NSViewController {
         performQuickLook()
     }
 
+    @objc func copyPathAction() {
+        let items = selectedItems
+        guard !items.isEmpty else { return }
+        let text = items.map { $0.url.path }.joined(separator: "\n")
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+    }
+
     @objc func getInfoAction() {
         let urls = selectedItems.map(\.url)
         guard !urls.isEmpty else { return }
@@ -1947,6 +1957,35 @@ public final class BrowserPaneViewController: NSViewController {
     }
 }
 
+/// Path bar with a context menu: right-clicking a component copies that
+/// component's path, right-clicking empty space copies the current folder.
+private final class PathBarControl: NSPathControl {
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let point = convert(event.locationInWindow, from: nil)
+        var target = url
+        if let cell = cell as? NSPathCell,
+           let component = cell.pathComponentCell(at: point, withFrame: bounds, in: self),
+           let componentURL = component.url {
+            target = componentURL
+        }
+        guard let target else { return nil }
+
+        let menu = NSMenu()
+        let item = NSMenuItem(title: "Copy Path", action: #selector(copyPath(_:)), keyEquivalent: "")
+        item.target = self
+        item.representedObject = target
+        menu.addItem(item)
+        return menu
+    }
+
+    @objc private func copyPath(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(url.path, forType: .string)
+    }
+}
+
 /// Draws theme rows: background, alternating tint and a rounded selection
 /// fill. Falls back to AppKit drawing when a theme leaves a color unspecified.
 private final class ThemedRowView: NSTableRowView {
@@ -2464,6 +2503,9 @@ extension BrowserPaneViewController: NSSearchFieldDelegate {
 
 extension BrowserPaneViewController: NSMenuItemValidation {
     public func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(copyPathAction) {
+            return !model.isArchive && !selectedItems.isEmpty
+        }
         guard model.isRemote || model.isArchive else { return true }
         switch menuItem.action {
         case #selector(cut(_:)), #selector(copy(_:)), #selector(paste(_:)),
