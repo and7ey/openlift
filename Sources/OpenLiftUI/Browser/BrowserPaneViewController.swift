@@ -9,7 +9,17 @@ import UniformTypeIdentifiers
 @MainActor
 public final class BrowserPaneViewController: NSViewController {
     public let model: BrowserModel
-    public var isActivePane = false
+    /// Whether this pane owns the cursor. The inactive pane hides its cursor
+    /// completely, as classic two-pane managers do.
+    public var isActivePane = false {
+        didSet {
+            guard isActivePane != oldValue else { return }
+            refreshCursorAppearance()
+            onActiveStateChanged?(isActivePane)
+        }
+    }
+    /// Called when the pane gains or loses the cursor.
+    public var onActiveStateChanged: ((Bool) -> Void)?
 
     /// Called when the pane becomes the active one (click, focus, navigation).
     public var onActivate: (() -> Void)?
@@ -697,16 +707,43 @@ public final class BrowserPaneViewController: NSViewController {
         } else {
             text = "\(Self.number(count)) of \(Self.number(model.items.count)) items"
         }
-        if selected > 0 {
+        if selected > 0, !resultsMode {
+            text = "\(Self.number(selected)) of \(Self.number(count)) selected"
+            if let size = selectedSizeText() {
+                text += " (\(size))"
+            }
+        } else if selected > 0 {
             text += ", \(Self.number(selected)) selected"
         }
         if let gitSnapshot, !resultsMode {
             text = "\(gitSnapshot.summaryText) — " + text
         }
         if let free = availableCapacity() {
-            text += " — \(Formatting.size(free)) available"
+            text += ", \(Formatting.size(free)) available"
         }
         statusLabel.stringValue = text
+    }
+
+    /// Combined size of the selection, as shown in parentheses in the status
+    /// bar. Folder sizes count once calculated with Calculate Folder Size.
+    private func selectedSizeText() -> String? {
+        let items = selectedItems
+        guard !items.isEmpty else { return nil }
+        var total: Int64 = 0
+        var known = false
+        for item in items {
+            if item.isDirectory {
+                if let size = folderSizes[item.url] {
+                    total += size
+                    known = true
+                }
+            } else if let size = item.size {
+                total += size
+                known = true
+            }
+        }
+        guard known else { return nil }
+        return Formatting.size(total)
     }
 
     private static func number(_ value: Int) -> String {
@@ -846,6 +883,30 @@ public final class BrowserPaneViewController: NSViewController {
 
     public func deactivate() {
         isActivePane = false
+    }
+
+    /// Redraws the cursor after the pane becomes active or inactive. Row views
+    /// consult `showsSelection`; reloading the selected rows restores the
+    /// emphasized text color AppKit drops while the cursor is hidden.
+    private func refreshCursorAppearance() {
+        tableView.enumerateAvailableRowViews { rowView, _ in
+            (rowView as? ThemedRowView)?.showsSelection = self.isActivePane
+            rowView.needsDisplay = true
+        }
+        let visibleRows = tableView.rows(in: tableView.visibleRect)
+        let visibleSelected = tableView.selectedRowIndexes.intersection(
+            IndexSet(integersIn: visibleRows.location..<(visibleRows.location + visibleRows.length))
+        )
+        if !visibleSelected.isEmpty {
+            tableView.reloadData(
+                forRowIndexes: visibleSelected,
+                columnIndexes: IndexSet(integersIn: 0..<tableView.numberOfColumns)
+            )
+        }
+        // Icons keep their selection; only the highlight follows the pane.
+        for case let tile as IconItemView in collectionView.visibleItems() {
+            tile.hidesSelection = !isActivePane
+        }
     }
 
     // MARK: - Actions
@@ -1441,6 +1502,7 @@ public final class BrowserPaneViewController: NSViewController {
             deleteRemoteSelection(items)
             return
         }
+        guard confirmTrash(items) else { return }
         let provider = LocalFileProvider()
 
         let title = FileOperationRecord(
@@ -1474,6 +1536,21 @@ public final class BrowserPaneViewController: NSViewController {
             )
             model.reload()
         }
+    }
+
+    /// Moves require explicit confirmation: trashing from a two-pane manager is
+    /// easy to trigger by accident.
+    private func confirmTrash(_ items: [FileItem]) -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = items.count == 1
+            ? "Move “\(items[0].name)” to the Trash?"
+            : "Move \(items.count) items to the Trash?"
+        alert.informativeText = "You can restore deleted items from the Trash."
+        alert.addButton(withTitle: "Move to Trash")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons.last?.keyEquivalent = "\u{1b}"
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     private func deleteRemoteSelection(_ items: [FileItem]) {
@@ -2041,6 +2118,10 @@ private final class ThemedRowView: NSTableRowView {
     var isAlternateRow = false {
         didSet { needsDisplay = true }
     }
+    /// The inactive pane must not show a cursor at all.
+    var showsSelection = true {
+        didSet { needsDisplay = true }
+    }
 
     override func drawBackground(in dirtyRect: NSRect) {
         guard let background = theme.backgroundColor else {
@@ -2053,6 +2134,7 @@ private final class ThemedRowView: NSTableRowView {
     }
 
     override func drawSelection(in dirtyRect: NSRect) {
+        guard showsSelection else { return }
         guard let selection = theme.selectionColor else {
             super.drawSelection(in: dirtyRect)
             return
@@ -2168,6 +2250,11 @@ private final class IconItemView: NSCollectionViewItem {
         view.toolTip = badgeTip.map { "\(name) — \($0)" } ?? name
     }
 
+    /// The inactive pane must not show a cursor at all.
+    var hidesSelection = false {
+        didSet { updateBackground() }
+    }
+
     override var isSelected: Bool {
         didSet { updateBackground() }
     }
@@ -2177,7 +2264,7 @@ private final class IconItemView: NSCollectionViewItem {
     }
 
     private func updateBackground() {
-        let selected = isSelected || highlightState == .forSelection
+        let selected = (isSelected || highlightState == .forSelection) && !hidesSelection
         view.layer?.cornerRadius = 6
         view.layer?.backgroundColor = selected
             ? NSColor.selectedContentBackgroundColor.withAlphaComponent(0.22).cgColor
@@ -2237,6 +2324,7 @@ extension BrowserPaneViewController: NSCollectionViewDataSource {
             return item
         }
         let file = iconSections[indexPath.section].items[indexPath.item]
+        tile.hidesSelection = !isActivePane
         let status = gitStatus(for: file)
         tile.configure(
             name: file.name,
@@ -2341,6 +2429,7 @@ extension BrowserPaneViewController: NSTableViewDataSource, NSTableViewDelegate 
         let rowView = ThemedRowView()
         rowView.theme = theme
         rowView.isAlternateRow = row % 2 == 1
+        rowView.showsSelection = isActivePane
         return rowView
     }
 

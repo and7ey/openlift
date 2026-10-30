@@ -39,6 +39,8 @@ Early development. The local-file MVP is in progress:
 | Copy Path (item and path-bar menus) | done |
 | Edit files in an external editor (TextEdit default, configurable) | done |
 | Themes: System, Graphite, Nord, Solarized light/dark | done |
+| Active-pane accent bar, hidden inactive cursor, full-width flat tabs | done |
+| Confirm-before-trash dialog | done |
 | Search: in-folder filter + advanced window (recursive, content, preview) | done |
 | ZIP archives | done |
 | Icon view | done |
@@ -198,6 +200,20 @@ Design notes:
   Size column (a “…” while working). Sizes are computed off the main thread
   without following symlinks, are cached per pane, and files keep their own
   size. Swap Panes moved to ⇧⌘X to free the shortcut.
+- Tabs are flat, rectangular segments that divide each pane's strip evenly,
+  so a single tab fills the whole width. The active pane is marked by an
+  accent bar under its tabs, and the inactive pane draws no cursor at all
+  (list rows, icon tiles and the keyboard focus agree). The tab title follows
+  its folder, and the close button appears only when a pane has two or more
+  tabs.
+- The status bar reports the selection the way classic two-pane managers do:
+  `1 of 15 selected (91 bytes), 28,75 GB available`. The parenthesized size
+  sums the selected files and any folder totals already calculated with
+  Calculate Folder Size; the free space of the volume follows after a comma.
+- Moving items to the Trash asks for confirmation first (“Move “name” to the
+  Trash?” with Move to Trash and Cancel), so a stray Delete or F8 in a pane
+  cannot remove files silently. Remote servers keep their permanent-delete
+  warning instead, and undo still restores local trashed items.
 - Tab and Shift-Tab move focus between the two panes only; the sidebar,
   toolbar and tab bar never take part in the focus cycle. In single-pane mode
   Tab returns focus to the visible pane.

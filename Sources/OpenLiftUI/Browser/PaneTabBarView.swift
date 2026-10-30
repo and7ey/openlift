@@ -1,6 +1,7 @@
 import AppKit
 
-/// One tab in a pane's tab bar.
+/// One tab in a pane's tab bar: a flat, full-height segment with a title and a
+/// close button. Tabs are rectangular and share the strip's width evenly.
 final class TabItemView: NSView {
     let index: Int
     var onSelect: ((Int) -> Void)?
@@ -8,12 +9,12 @@ final class TabItemView: NSView {
 
     private let titleLabel = NSTextField(labelWithString: "")
     private let closeButton = NSButton()
+    private let separator = NSView()
 
-    init(index: Int, title: String) {
+    init(index: Int, title: String, showsCloseButton: Bool, showsSeparator: Bool) {
         self.index = index
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.cornerRadius = 5
 
         titleLabel.stringValue = title
         titleLabel.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
@@ -28,30 +29,37 @@ final class TabItemView: NSView {
         closeButton.contentTintColor = .secondaryLabelColor
         closeButton.target = self
         closeButton.action = #selector(closeTapped)
+        closeButton.isHidden = !showsCloseButton
         closeButton.translatesAutoresizingMaskIntoConstraints = false
         addSubview(closeButton)
 
-        NSLayoutConstraint.activate([
-            heightAnchor.constraint(equalToConstant: 22),
-            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
-            titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-            titleLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 150),
+        separator.wantsLayer = true
+        separator.layer?.backgroundColor = NSColor.separatorColor.cgColor
+        separator.isHidden = !showsSeparator
+        separator.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(separator)
 
-            closeButton.leadingAnchor.constraint(equalTo: titleLabel.trailingAnchor, constant: 4),
-            closeButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+        let closeWidth: CGFloat = showsCloseButton ? 14 : 0
+        NSLayoutConstraint.activate([
+            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: closeButton.leadingAnchor, constant: -2),
+
+            closeButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             closeButton.centerYAnchor.constraint(equalTo: centerYAnchor),
-            closeButton.widthAnchor.constraint(equalToConstant: 12),
-            closeButton.heightAnchor.constraint(equalToConstant: 12)
+            closeButton.widthAnchor.constraint(equalToConstant: closeWidth),
+            closeButton.heightAnchor.constraint(equalToConstant: 12),
+
+            separator.leadingAnchor.constraint(equalTo: leadingAnchor),
+            separator.widthAnchor.constraint(equalToConstant: 1),
+            separator.topAnchor.constraint(equalTo: topAnchor, constant: 6),
+            separator.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6)
         ])
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
-    }
-
-    override var intrinsicContentSize: NSSize {
-        NSSize(width: titleLabel.intrinsicContentSize.width + 36, height: 22)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -66,7 +74,7 @@ final class TabItemView: NSView {
 
     func setSelected(_ selected: Bool) {
         layer?.backgroundColor = selected
-            ? NSColor.selectedContentBackgroundColor.withAlphaComponent(0.22).cgColor
+            ? NSColor.selectedContentBackgroundColor.withAlphaComponent(0.16).cgColor
             : NSColor.clear.cgColor
         titleLabel.textColor = selected ? .labelColor : .secondaryLabelColor
         titleLabel.font = .systemFont(
@@ -81,6 +89,9 @@ final class TabItemView: NSView {
 }
 
 /// Horizontal tab strip shown at the top of each pane.
+///
+/// Tabs are rectangular and divide the strip evenly, so one tab fills it
+/// completely. A short accent bar along the bottom edge marks the active pane.
 public final class PaneTabBarView: NSView {
     public var onSelect: ((Int) -> Void)?
     public var onClose: ((Int) -> Void)?
@@ -88,13 +99,16 @@ public final class PaneTabBarView: NSView {
 
     private let stack = NSStackView()
     private let newButton = NSButton()
+    private let accentBar = NSView()
+    private var isActive = false
 
     public override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
 
         stack.orientation = .horizontal
-        stack.spacing = 2
+        stack.spacing = 0
+        stack.distribution = .fillEqually
         stack.alignment = .centerY
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
@@ -109,16 +123,29 @@ public final class PaneTabBarView: NSView {
         newButton.translatesAutoresizingMaskIntoConstraints = false
         addSubview(newButton)
 
+        accentBar.wantsLayer = true
+        accentBar.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+        accentBar.isHidden = true
+        accentBar.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(accentBar)
+
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: 30),
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
-            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -32),
-            newButton.leadingAnchor.constraint(equalTo: stack.trailingAnchor, constant: 6),
-            newButton.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -8),
-            newButton.centerYAnchor.constraint(equalTo: centerYAnchor),
-            newButton.widthAnchor.constraint(equalToConstant: 18),
-            newButton.heightAnchor.constraint(equalToConstant: 18)
+
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stack.topAnchor.constraint(equalTo: topAnchor),
+            stack.trailingAnchor.constraint(equalTo: newButton.leadingAnchor),
+            stack.bottomAnchor.constraint(equalTo: accentBar.topAnchor),
+
+            newButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+            newButton.centerYAnchor.constraint(equalTo: stack.centerYAnchor),
+            newButton.widthAnchor.constraint(equalToConstant: 20),
+            newButton.heightAnchor.constraint(equalToConstant: 20),
+
+            accentBar.leadingAnchor.constraint(equalTo: leadingAnchor),
+            accentBar.trailingAnchor.constraint(equalTo: trailingAnchor),
+            accentBar.bottomAnchor.constraint(equalTo: bottomAnchor),
+            accentBar.heightAnchor.constraint(equalToConstant: 2)
         ])
     }
 
@@ -133,13 +160,26 @@ public final class PaneTabBarView: NSView {
             view.removeFromSuperview()
         }
 
+        let showsClose = titles.count > 1
         for (index, title) in titles.enumerated() {
-            let tab = TabItemView(index: index, title: title)
+            let tab = TabItemView(
+                index: index,
+                title: title,
+                showsCloseButton: showsClose,
+                showsSeparator: index > 0
+            )
             tab.onSelect = { [weak self] index in self?.onSelect?(index) }
             tab.onClose = { [weak self] index in self?.onClose?(index) }
             tab.setSelected(index == activeIndex)
             stack.addArrangedSubview(tab)
         }
+    }
+
+    /// Shows or hides the accent bar that marks the active pane.
+    public func setActive(_ active: Bool) {
+        guard active != isActive else { return }
+        isActive = active
+        accentBar.isHidden = !active
     }
 
     @objc private func newTapped() {

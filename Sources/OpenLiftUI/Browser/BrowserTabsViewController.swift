@@ -187,6 +187,7 @@ public final class BrowserTabsViewController: NSViewController {
         let pane = BrowserPaneViewController(model: model)
         pane.applyTheme(currentTheme)
         pane.onActivate = { [weak self] in self?.onActivate?() }
+        pane.onActiveStateChanged = { [weak self] active in self?.tabBar.setActive(active) }
         pane.onOperation = { [weak self] record in self?.onOperation?(record) }
         pane.onOpenSearchResultFolder = { [weak self] url in self?.newTab(at: url) }
         return pane
@@ -253,6 +254,7 @@ public final class BrowserTabsViewController: NSViewController {
         ])
 
         tabBar.update(titles: panes.map { tabTitle(for: $0) }, activeIndex: activeIndex)
+        tabBar.setActive(pane.isActivePane)
         pane.activate()
         onActivate?()
     }

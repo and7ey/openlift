@@ -21,7 +21,7 @@ public enum Formatting {
 
     public static func size(_ bytes: Int64?) -> String {
         guard let bytes else { return "—" }
-        if bytes < 1000 { return "\(bytes) bytes" }
+        if bytes < 1000 { return bytes == 1 ? "1 byte" : "\(bytes) bytes" }
         return bytesFormatter.string(fromByteCount: bytes)
     }
 
